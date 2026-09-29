@@ -60,6 +60,19 @@ int ddj_progress_read_count(const ddj_progress_t *progress);
 int ddj_progress_starred_count(const ddj_progress_t *progress);
 int ddj_progress_sessions(const ddj_progress_t *progress);
 
+/* 「待参」：表态是「还要想」或「没接上」的章。
+ *
+ * 这是「待参」那一页的数据来源。之所以不另做一个「收藏」动作：硬件只有三个键，
+ * 而且在日课的四层里每个键都已经有明确职责，再塞一个收藏进去必然和某一个冲突。
+ * 而「待参」不需要任何新输入 —— 它就是用户已经在参究里表过的态，语义上也正是
+ * 这个应用「反复参」的落点。
+ *
+ * chapter_count 是已收录的章数；传 0 或负数时返回 0（或 -1）。 */
+int ddj_progress_pending_count(const ddj_progress_t *progress, int chapter_count);
+
+/* 第 rank 个待参章的章下标（0 基，按章号升序）；越界返回 -1。 */
+int ddj_progress_pending_at(const ddj_progress_t *progress, int chapter_count, int rank);
+
 /* 一次日课读完之后调用：日课次数 +1。 */
 void ddj_progress_end_session(ddj_progress_t *progress);
 

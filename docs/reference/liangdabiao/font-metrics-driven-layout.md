@@ -4,10 +4,10 @@
 
 # Letting Font Metrics Drive the Layout
 
-Also written while building the [San Zi Jing kids game](sanzijing-kids-game/README.md).
+Also written while building the [Dao De Jing daily reading app](daodejing-daily/README.md).
 Every layout bug in that application came from one habit: choosing round numbers
 for row heights and writing UI copy first, then discovering the font disagreed.
-This entry is the arithmetic that replaced the guessing, and the three defects it
+This entry is the arithmetic that replaced the guessing, and the defects it
 caught.
 
 ## A row's usable height is not its height
@@ -24,14 +24,14 @@ used here, LVGL reports:
 
 | Font | `line_height` |
 | --- | --- |
-| `szj_font_16` | 20 px |
-| `szj_font_24` | 29 px |
-| `szj_font_32` | 38 px |
+| `ddj_font_16` | 20 px |
+| `ddj_font_24` | 29 px |
+| `ddj_font_32` | 38 px |
 
 Note that `line_height` is noticeably larger than the nominal size: the 24 px
 font needs 29 px, the 32 px font needs 38. This is the trap. A 40 px row with a
 3 px border leaves 34 px of content, which looks like plenty for "24 px text" —
-and it is. But the same 40 px row used for a 32 px option leaves 34 px against a
+and it is. But the same 40 px row used for a 32 px string leaves 34 px against a
 requirement of 38, and the glyphs get clipped top and bottom by 2 px each. It is
 visible on hardware and invisible in the source.
 
@@ -41,41 +41,91 @@ So: pick the font first, then solve for the row height.
 row height >= line_height + 2 * border width
 ```
 
-Where that landed in practice:
+Where that landed here:
 
-| Row | Before | After | Why |
-| --- | --- | --- | --- |
-| Home menu row (24 px text) | 34 | **36** | 34 left 28 px, needed 29 |
-| Quiz option row (32 px text) | 40 | **46** | 40 left 34 px, needed 38 |
-| Settings row (24 px text) | 40 | 40 | already sufficient |
+| Row | Font | Height | Border | Usable | `line_height` |
+| --- | --- | --- | --- | --- | --- |
+| List row (`DDJ_ROW_H`) | 24 px | 44 | 3 | 38 | 29 |
+| Home menu row | 24 px | 44 | 3 | 38 | 29 |
+| Settings row | 24 px | 44 | 3 | 38 | 29 |
 
-Making the option rows 6 px taller meant the prompt panel above them had to give
-up 16 px (76 to 60) so the page still fit. That is the normal consequence: on a
-240 × 320 screen, fixing one row's height re-opens the vertical budget for the
-whole page.
+44 px is not a round number chosen for looks — it is the smallest height that
+also happens to clear the 32 px font's 38 px requirement, which is what makes it
+safe to reuse the same row height for a 24 px label today and a 32 px one later.
+Making every row 6 px taller than a naive 38 px choice would re-open the vertical
+budget for each page; here it is spent once, in one shared constant.
 
 ## Budget the page vertically and show the arithmetic
 
 Each page's constants now carry their vertical budget as a comment, and the sum
-is easy to re-check:
+is easy to re-check. The page card is 230 x 310 with a 5 px inset, the content
+column starts 10 px in and is 210 px wide:
 
 ```text
-Home  (page card is 310 px tall, hint bar starts at 284)
-  top bar     0 .. 36
-  title plate 44 .. 110
-  menu      118 .. 280    4 rows x 36 + 3 gaps x 6 = 162
-  hint bar  284 .. 310
+Page card  230 x 310, inset 5, radius 25
+  top bar     0 .. 36      (DDJ_BAR_H)
+  body       36 .. 284     (DDJ_BODY_H = 248)
+  hint bar  284 .. 310     (DDJ_HINT_H = 26)
+  content x  10 .. 220     (DDJ_BODY_W = 210)
 
-Quiz  (content container is 248 px tall)
-  question no.   6 .. 26
-  prompt        32 .. 92
-  options       96 .. 242   3 rows x 46 + 2 gaps x 4
-  bottom slack            6
+Home
+  caption    38 ..  58
+  menu       64 .. 258     4 rows x 44 + 3 gaps x 6 = 194
+
+Daily, read layer   (body is 248 tall)
+  caption          y = 2
+  passage    24 .. 248     DAILY_READ_H = 248 - 24 = 224
+
+Daily, reflection layer
+  caption          y = 2
+  question   22 ..  90     DAILY_QUESTION_H = 68
+  options    96 .. 244     3 rows x 44 + 2 gaps x 8 = 148
 ```
 
 Write this out before writing code. A page that overflows does not clip
 gracefully — the last row simply disappears off the bottom, and on a device with
-no scroll view there is no way for the user to reach it.
+no scroll view there is no way for the user to reach it. Two consequences show up
+in the numbers above:
+
+- The read layer has **no caption of its own** beyond the 2 px offset, because the
+  20 px a caption would need is the difference between a 5-line passage and a
+  4-line one. Progress is reported in the bottom hint bar instead, which is
+  already on screen.
+- Only the chapter **lists** (catalog and shelf) get a scrollable container,
+  because a list inherently exceeds the screen. Every other layer is laid out
+  statically and must be proven to fit — which is exactly what makes the budget
+  worth writing down. Keeping the scrollable set to one widget also means there
+  is only one place where a stray scroll gesture can do something surprising.
+
+## Turn the per-line budget into a division, and enforce it twice
+
+The content column is 210 px. Because every full-width CJK glyph has an advance
+exactly equal to the font size (proven in the font-subsetting entry), "how many
+characters fit on one line" is a division, and it is written as one:
+
+```c
+#define DDJ_CHARS_PASSAGE (DDJ_BODY_W / 32)   // 6
+#define DDJ_CHARS_PARA    (DDJ_BODY_W / 24)   // 8
+#define DDJ_CHARS_NOTE    (DDJ_BODY_W / 16)   // 13
+```
+
+Writing it as a division rather than as `#define DDJ_CHARS_PASSAGE 6` means the
+number changes automatically if the body width does — and, more usefully, it can
+be asserted at compile time:
+
+```c
+_Static_assert(DDJ_CHARS_PASSAGE * 32 <= DDJ_BODY_W, "passage line budget no longer fits");
+_Static_assert(DDJ_CHARS_PARA    * 24 <= DDJ_BODY_W, "commentary line budget no longer fits");
+_Static_assert(DDJ_CHARS_NOTE    * 16 <= DDJ_BODY_W, "hint line budget no longer fits");
+```
+
+Three numbers of that kind should exist. The same budget is also declared on the
+generation side, in `tools/daodejing/content.py`, where it rejects a chapter whose
+text is too long to fit. The two must agree; if only one exists, chapters pass
+generation and then overflow on the panel. Beyond that, `tests/test_ddj_wrap.c`
+links the real content and asserts that no wrapped line exceeds the per-line
+figure — so the budget is checked at generation time, at compile time, and in a
+host test.
 
 ## Measure text width against the real font
 
@@ -95,14 +145,21 @@ def width(text, px):
     return sum(hmtx[cmap[ord(ch)]][0] for ch in text) * px / upem
 ```
 
-Run this over **every string in the UI** before the UI is written, comparing each
-against the space it has. That check found a real collision: the settings row
-label — six Chinese characters meaning "reset learning progress" — is 144 px wide
-at 24 px, but the primary text area in that row is only 124 px. The row is
-210 px, minus a 3 px border on each side, minus 8 px padding on each side, minus
-64 px reserved for the right-aligned status label. The text would have run under
-the status label. Shortening the label to four characters ("reset progress")
-fixed it.
+Run this over **every string in the UI**, comparing each against the space it
+has. That check produced a real design decision in the catalog page. A list row
+is 210 px wide and its text area is:
+
+```text
+210  - 2 * 3 (border)  - 2 * 8 (padding)  - 88 (right-hand note)  =  100 px
+```
+
+At 24 px that is 4 characters. The obvious heading is "chapter number + title" —
+six ideographs, or 144 px — which is 44 px too wide, so both halves would have
+been ellipsized and the reader would have seen a number with no title. The
+chapter number therefore moved into the right-hand note, which is 16 px text in
+an 88 px slot (5 characters) and renders the number with room to spare. The
+comment at the top of `main/ddj_catalog.c` records that arithmetic, so the next
+person does not re-derive it or undo it.
 
 Chinese text is unusually predictable: four characters of the 24 px subset are
 exactly 96 px, because CJK glyphs are full-width. Latin strings in the same UI do
@@ -111,99 +168,126 @@ not per character count.
 
 ## Size format buffers for the worst case, not the real case
 
-Two `snprintf` calls failed the build with `-Werror=format-truncation`. The
-buffer looked right for the values involved, and that is exactly the problem:
-GCC checks the buffer against the **widest possible** `%d` — 11 characters
-including the sign — not the two or three digits the counter will actually hold.
+GCC checks an `snprintf` buffer against the **widest possible** `%d` — 11
+characters including the sign — not the two or three digits the counter will
+actually hold. For a Chinese UI this is easy to get wrong, because each ideograph
+already costs three bytes before any number appears. The bottom hint bar's format
+string is six ideographs, four spaces, one middle dot, one slash, and three
+integer conversions:
 
-A question-number label is built from:
-
-```c
-char caption[16];   // too small
-snprintf(caption, sizeof(caption), QUESTION_FORMAT, index + 1, total);
+```text
+literal text      27 bytes   (6 ideographs, the separators, the slash)
+3 x widest %d     33 bytes   (11 bytes each, sign included)
+                --------
+worst case        60 bytes
++ terminator      61 bytes
 ```
 
-The format has 9 bytes of literal text (two ideographs at 3 bytes each, plus
-spaces and a slash) and two integer conversions. Worst case that is
-`9 + 11 + 11 = 31` bytes of text plus a terminator: 32. A 16-byte buffer is not
-close.
+so `char foot[64]` is the smallest round size that holds it. Sizing that buffer by
+the real values instead — "session 3, chapter 1 of 81" — would suggest 16 bytes
+and would be wrong by a factor of four. Note also that the middle dot is two
+bytes in UTF-8, not one and not three; a character-count estimate of the literal
+would have been wrong in both directions.
 
-The fix used here is to size the buffer for the type's worst case and say why in
-a comment, so that nobody later "optimises" it back down to the real value range:
+The rule used here:
 
-```c
-// Size for the worst decimal width of int, not for the actual question count:
-// the real maximum is 6 questions, but -Wformat-truncation only looks at the
-// type's range, so sizing to the real values reports a truncation error.
-char caption[48];
-snprintf(caption, sizeof(caption), QUESTION_FORMAT, index + 1, total);
-```
+- **Size for the type's worst case and say why in a comment**, so that nobody
+  later "optimises" it back down to the real value range. The arithmetic goes in
+  the comment next to the declaration, because the declaration alone looks absurd
+  for a counter that never exceeds two digits.
+- **Clamping is the alternative** when the buffer has to stay small — the label
+  then caps at 999 instead of being cut off, which is friendlier — but it needs
+  the same "this is deliberate" comment.
+- **`%s` needs a different argument, and it has to be made explicitly.** For
+  `"%s · %s"` there is no widest possible conversion, so the bound comes from the
+  two arguments being drawn from closed sets — a volume name that is always two
+  characters and a chapter label that is at most five. That argument has to be
+  written down too; "it's a string, so it obviously fits" is how the buffer that
+  does not fit gets written. Every `%s` in this application is fed from a closed
+  set, and each one says so.
 
-Clamping the value is the alternative when the buffer has to stay small — the
-label then caps at 999 instead of being cut off, which is friendlier — but it
-needs the same "this is deliberate" comment.
-
-Chinese literals make this much easier to hit than Latin ones, because each CJK
-character already costs three bytes before any numbers appear. Sweep every
-`snprintf` in the application for this pattern at once rather than fixing them
-one compile error at a time.
-
-## Stop text from overlapping when copy changes
-
-The measurements fix the copy you have today. Copy changes. Two cheap
-defences make the next change degrade instead of break:
-
-- **Give every row an explicit width** and let the label ellipsize
-  (`LV_LABEL_LONG_MODE_DOTS`) rather than letting a label size itself to content
-  and grow into its neighbour.
-- **Give dynamic numbers a fixed-width container.** A counter that can grow a
-  digit, or a `--` fallback that replaces a two-digit percentage, must not move
-  anything else on screen.
+Sweep every `snprintf` in the application for this pattern at once rather than
+fixing them one compile error at a time. Because the firmware build here does not
+enable `-Werror=format-truncation`, a too-small buffer is a warning that scrolls
+past rather than a failure; the arithmetic is the reliable check, not the
+compiler. A useful way to run that sweep is a small script over the sources:
+extract every literal format string, substitute 11 bytes per integer conversion,
+add the UTF-8 width of the literal, and compare against the declared size. It is
+twenty lines, and it found three buffers here that were sized from the real values
+rather than the type's range.
 
 ## One more: character counts are not byte counts
 
 A separate defect, but the same family — arithmetic about text done in the wrong
-unit. The flashcard page splits each 12-character lesson into two half-lines for
-display. The code computed a half-line as "3 bytes per character × 4 lines = 12
-bytes" and copied 12 bytes per half-line, which only covers 8 of the lesson's 12
-characters (12 bytes = 4 characters, so 2 × 4 = 8). **The fourth line of every
-lesson was never displayed.**
-
-The fix is 18 bytes per half-line (6 characters × 3), plus a compile-time
-constraint so the relationship cannot drift again:
+unit. In UTF-8 a CJK character is three bytes, so a buffer sized in characters
+and filled in bytes is short by a factor of three. Two places in this application
+have to hold both units at once, and both are handled by *naming* the units
+rather than by being careful:
 
 ```c
-_Static_assert(CARD_HALF_BYTES * CARD_HALF_COUNT ==
-                   (SZJ_LINE_BYTES - 1) * SZJ_LINES_PER_STANZA,
-               "two half-lines must cover the whole lesson");
+#define DDJ_PASSAGE_MAX_CHARS 24   /* characters -- a layout limit */
+#define DDJ_POINT_MAX_CHARS   48   /* characters -- a layout limit */
+
+/* bytes -- the buffer must hold the largest of the two, in UTF-8 */
+#define DDJ_WRAP_CAPACITY 176
 ```
 
-`SZJ_LINE_BYTES - 1` is one line's worth of text without its terminator, so the
-right-hand side is the lesson's 36 bytes of characters, and the left-hand side is
-"bytes per half-line times how many half-lines there are".
+The wrap buffer is the instructive one. Wrapped text is written into a single
+module-static buffer shared by every layer, so it must be sized for the **worst
+caller**, which is the commentary (48 characters), not the passage (24):
 
-A slot count and a byte count are different things. Naming them differently in
-the source — `CARD_GLYPH_BYTES` for the byte width of one character,
-`CARD_CELL_COUNT` for how many characters fit — is what stops the mix-up.
+```text
+48 characters at 8 per line   = 6 lines
+                              = 5 inserted line breaks
+48 characters x 3 bytes       = 144 bytes of text
+144 + 5 breaks                = 149 bytes
++ terminator                  = 150 bytes
+```
+
+`DDJ_WRAP_CAPACITY` is 176, leaving 26 bytes of margin. Sizing it from the
+passage (24 characters, 4 lines, 76 bytes) would have looked sufficient and
+overflowed the first time a six-line commentary point was wrapped. The derivation
+is written next to the constant, in characters and bytes, so the next person can
+re-check it instead of trusting it.
+
+That also explains why the wrap contract has to say what it does at the edges.
+The function inserts a break *between* lines and never a trailing one, so the
+break count is `lines - 1` — which is what makes the arithmetic above close. If
+it appended a trailing newline the count would be 6 and the same capacity would
+still hold, but the number in the comment would be wrong, and a comment whose
+arithmetic does not close is worse than no comment.
+
+The same distinction is why the save-format constants are stated as byte counts
+with the arithmetic spelled out — `4 header bytes + 81 chapter slots + 2 x 11
+wrong-answer bytes + 1 checksum byte = 108` — and asserted against
+`DDJ_PROGRESS_BLOB_SIZE` in a host test. A slot count and a byte count are
+different things; naming them differently in the source is what stops the mix-up.
 
 ## Check list
 
 - Row height is derived from `line_height + 2 * border`, not from a round number.
 - Every page has a written vertical budget whose parts sum to the page height.
+- Per-line character budgets are written as divisions of the content width and
+  asserted with `_Static_assert`.
+- The same budget is declared on the generation side, so content is rejected
+  before it can overflow the panel.
 - Every user-visible string was measured against its available width before the
-  code was written.
+  code was written, and the decisions that came out of it are recorded in a
+  comment.
 - Every `snprintf` buffer is sized for the widest possible conversion, with a
-  comment saying why it is larger than it looks like it needs to be.
-- Labels that can grow have fixed widths and ellipsize.
-- Compile-time assertions cover any arithmetic that mixes characters, bytes, and
-  slots.
+  comment saying why it is larger than it looks like it needs to be; where an
+  argument is `%s`, the comment says which closed set it comes from.
+- Buffers that must hold text in UTF-8 are sized in bytes, from a written
+  character-to-byte derivation, and named so the unit is visible.
 
 ## Related documents
 
-- [San Zi Jing kids game](sanzijing-kids-game/README.md) — the pages these
+- [Dao De Jing daily reading app](daodejing-daily/README.md) — the pages these
   constants govern.
 - [Cutting a CJK font subset for LVGL](cjk-font-subsetting-for-lvgl.md) — where
   the font sizes and their line heights come from.
-- `main/szj_ui.c` — the shared row and option widgets and their padding.
-- `main/szj_home.c`, `main/szj_lesson.c`, `main/szj_card.c` — the pages whose
+- `main/ddj_ui.c` — the shared page, row, and list widgets and their padding.
+- `main/ddj_ui.h` — the layout constants and the per-line budgets, with the
+  compile-time assertions in the `.c`.
+- `main/ddj_daily.c`, `main/ddj_home.c`, `main/ddj_catalog.c` — the pages whose
   constants carry the vertical budget.

@@ -99,6 +99,39 @@ int ddj_progress_sessions(const ddj_progress_t *progress)
     return progress ? (int)progress->sessions : 0;
 }
 
+// 「还在参」= 表过态，而且表的是「还要想」或「没接上」。只看槽位，不看文案 ——
+// 文案是按章定制的，槽位的含义才是跨章稳定的那一个。
+static bool slot_is_pending(ddj_slot_t slot)
+{
+    return slot == DDJ_SLOT_CHEWING || slot == DDJ_SLOT_MISSED;
+}
+
+int ddj_progress_pending_count(const ddj_progress_t *progress, int chapter_count)
+{
+    if (!progress || chapter_count <= 0) return 0;
+    if (chapter_count > DDJ_TOTAL_CHAPTERS) chapter_count = DDJ_TOTAL_CHAPTERS;
+
+    int total = 0;
+    for (int i = 0; i < chapter_count; i++) {
+        if (slot_is_pending(ddj_progress_slot(progress, i))) total++;
+    }
+    return total;
+}
+
+int ddj_progress_pending_at(const ddj_progress_t *progress, int chapter_count, int rank)
+{
+    if (!progress || chapter_count <= 0 || rank < 0) return -1;
+    if (chapter_count > DDJ_TOTAL_CHAPTERS) chapter_count = DDJ_TOTAL_CHAPTERS;
+
+    int seen = 0;
+    for (int i = 0; i < chapter_count; i++) {
+        if (!slot_is_pending(ddj_progress_slot(progress, i))) continue;
+        if (seen == rank) return i;
+        seen++;
+    }
+    return -1;
+}
+
 void ddj_progress_end_session(ddj_progress_t *progress)
 {
     if (!progress) return;

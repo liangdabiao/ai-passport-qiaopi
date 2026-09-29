@@ -208,5 +208,47 @@ int main(void)
     assert(ddj_progress_starred_count(&q) == 0);
     assert(ddj_progress_slot(&q, 0) == DDJ_SLOT_NONE);
     for (int i = 0; i < DDJ_NOTES_BYTES; i++) assert(q.notes[i] == 0);
+
+    // ---- 待参：表过态且表态是「还要想 / 没接上」的章 ----
+    ddj_progress_t pending;
+    ddj_progress_reset(&pending);
+
+    // 一章没收录、或者都还没表态时，待参是空的。
+    assert(ddj_progress_pending_count(&pending, 0) == 0);
+    assert(ddj_progress_pending_count(NULL, 5) == 0);
+    assert(ddj_progress_pending_count(&pending, -1) == 0);
+    assert(ddj_progress_pending_at(&pending, 5, 0) == -1);
+    assert(ddj_progress_pending_at(&pending, -1, 0) == -1);
+    assert(ddj_progress_pending_at(NULL, 5, 0) == -1);
+
+    // 三种倾向各表一章：只有「还要想」「没接上」算待参，「接了」不算。
+    ddj_progress_set_slot(&pending, 0, DDJ_SLOT_LANDED);
+    ddj_progress_set_slot(&pending, 1, DDJ_SLOT_CHEWING);
+    ddj_progress_set_slot(&pending, 2, DDJ_SLOT_MISSED);
+    assert(ddj_progress_pending_count(&pending, 3) == 2);
+    // 只数收录范围内的章：第 3 章还没收录时，它不进待参。
+    assert(ddj_progress_pending_count(&pending, 1) == 0);
+    assert(ddj_progress_pending_count(&pending, 2) == 1);
+    assert(ddj_progress_pending_count(&pending, 3) == 2);
+
+    // 按章号升序排，rank 越界返回 -1。
+    assert(ddj_progress_pending_at(&pending, 3, 0) == 1);
+    assert(ddj_progress_pending_at(&pending, 3, 1) == 2);
+    assert(ddj_progress_pending_at(&pending, 3, 2) == -1);
+    assert(ddj_progress_pending_at(&pending, 3, -1) == -1);
+
+    // 改主意不算数了：把「还要想」改成「接了」，它就从待参里出去。
+    ddj_progress_set_slot(&pending, 1, DDJ_SLOT_LANDED);
+    assert(ddj_progress_pending_count(&pending, 3) == 1);
+    assert(ddj_progress_pending_at(&pending, 3, 0) == 2);
+
+    // 「未表态」也不进待参。
+    ddj_progress_set_slot(&pending, 2, DDJ_SLOT_NONE);
+    assert(ddj_progress_pending_count(&pending, 3) == 0);
+
+    // 收录章数超过全本时按全本夹紧，不越界读。
+    ddj_progress_set_slot(&pending, DDJ_TOTAL_CHAPTERS - 1, DDJ_SLOT_MISSED);
+    assert(ddj_progress_pending_count(&pending, 999) == 1);
+    assert(ddj_progress_pending_at(&pending, 999, 0) == DDJ_TOTAL_CHAPTERS - 1);
     return 0;
 }

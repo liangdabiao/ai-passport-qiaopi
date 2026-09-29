@@ -13,6 +13,12 @@
 /* 「八十一」三个汉字各占 3 字节，加结尾 NUL 共 10 字节。 */
 #define DDJ_CHINESE_NUMBER_CAPACITY 10
 
+/* 「第八十一章」= 5 个汉字 = 15 字节，加结尾 NUL 共 16 字节。 */
+#define DDJ_CHAPTER_LABEL_CAPACITY 16
+
+/* 「第八十一章 道可道」这类标题的容量，够放一个较长的章题。 */
+#define DDJ_CHAPTER_HEADING_CAPACITY 48
+
 /* 已经收录了几章。原型阶段是 1，补齐后是 81。 */
 int ddj_chapter_count(void);
 
@@ -38,5 +44,15 @@ const char *ddj_chapter_option(const ddj_chapter_t *chapter, int slot);
 const char *ddj_volume_name(ddj_volume_t volume);
 
 /* 把 1..99 写成中文数字：「一」「十」「十一」「二十一」「八十一」。
- * 越界或 capacity 不够时返回 false，且 out 一定被写成空串。 */
+ * 越界或容量不足时返回 false，并把 out 写成空串；capacity 为 0 时写不进
+ * 任何东西，只保证返回 false。 */
 bool ddj_chinese_number(int number, char *out, size_t capacity);
+
+/* 章号的中文说法：「第一章」「第八十一章」。
+ * 章号用中文数字而不是阿拉伯数字，是为了和顶栏、正文的档位一致 ——
+ * 一个中文界面上混两种数字，读起来会分神。 */
+bool ddj_chapter_label(int number, char *out, size_t capacity);
+
+/* 顶栏标题：「第一章 道可道」。容量不够时返回 false（调用方应退回到
+ * ddj_chapter_label）。 */
+bool ddj_chapter_heading(const ddj_chapter_t *chapter, char *out, size_t capacity);

@@ -39,7 +39,7 @@ int main(void)
         for (int p = 0; p < chapter->point_count; p++) {
             const char *text = ddj_chapter_point(chapter, p);
             assert(text != NULL && text[0] != '\0');
-            // 汉字最多 3 字节，所以「60 字」的字节上限是 180。真正按字数
+            // 汉字最多 3 字节，所以「48 字」的字节上限是 144。真正按字数
             // 判的是生成阶段（gen_content.py），这里只兜住明显跑飞的长度。
             assert(strlen(text) <= (size_t)DDJ_POINT_MAX_CHARS * 3);
         }
@@ -106,6 +106,33 @@ int main(void)
     assert(!ddj_chinese_number(100, out, sizeof(out)) && out[0] == '\0');
     assert(!ddj_chinese_number(81, out, 9) && out[0] == '\0');
     assert(!ddj_chinese_number(81, NULL, sizeof(out)));
-    assert(!ddj_chinese_number(1, out, 0) && out[0] == '\0');
+    // capacity 为 0：同上，只能断言返回值。
+    assert(!ddj_chinese_number(1, out, 0));
+
+    // 章号的中文说法「第X章」：首页条目、顶栏标题都用它。
+    char label[DDJ_CHAPTER_LABEL_CAPACITY];
+    assert(ddj_chapter_label(1, label, sizeof(label)) && strcmp(label, "第一章") == 0);
+    assert(ddj_chapter_label(37, label, sizeof(label)) && strcmp(label, "第三十七章") == 0);
+    assert(ddj_chapter_label(81, label, sizeof(label)) && strcmp(label, "第八十一章") == 0);
+    // 最长形态：5 个汉字 15 字节，容量常量必须刚好放得下。
+    assert(strlen(label) == 15);
+    assert(DDJ_CHAPTER_LABEL_CAPACITY == 16);
+    assert(!ddj_chapter_label(0, label, sizeof(label)) && label[0] == '\0');
+    assert(!ddj_chapter_label(100, label, sizeof(label)) && label[0] == '\0');
+    // 容量刚好差一个字节也不行。
+    assert(!ddj_chapter_label(81, label, 15) && label[0] == '\0');
+    assert(ddj_chapter_label(81, label, 16) && strcmp(label, "第八十一章") == 0);
+    assert(!ddj_chapter_label(1, NULL, sizeof(label)));
+    // capacity 为 0 时写不进任何东西，所以这条只能断言返回值 ——
+    // 「失败时 out 一定是空串」这个承诺在这里天然做不到，不做无意义的断言。
+    assert(!ddj_chapter_label(1, label, 0));
+
+    // 顶栏标题：「第X章 章题」。
+    char heading[DDJ_CHAPTER_HEADING_CAPACITY];
+    assert(ddj_chapter_heading(first, heading, sizeof(heading)) &&
+           strcmp(heading, "第一章 道可道") == 0);
+    assert(!ddj_chapter_heading(NULL, heading, sizeof(heading)) && heading[0] == '\0');
+    assert(!ddj_chapter_heading(first, heading, 1) && heading[0] == '\0');
+    assert(!ddj_chapter_heading(first, NULL, sizeof(heading)));
     return 0;
 }

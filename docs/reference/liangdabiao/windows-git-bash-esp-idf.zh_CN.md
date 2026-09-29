@@ -4,7 +4,7 @@
 
 # 在 Windows 的 Git Bash 里构建 ESP-IDF 固件
 
-为构建[三字经儿童学习游戏](sanzijing-kids-game/README.zh_CN.md)时攒下的经验。当时的环境是 Windows 上的 Git Bash（MSYS2）加 ESP-IDF 5.5.3。有两道坎会直接把你挡住，其中一道**在 shell 内部无法解决**；另外还有一批既有测试在这台机器上**确实无法运行**。
+为构建[道德经日课机](daodejing-daily/README.zh_CN.md)时攒下的经验。当时的环境是 Windows 上的 Git Bash（MSYS2）加 ESP-IDF 5.5.3。有两道坎会直接把你挡住，其中一道**在 shell 内部无法解决**；另外还有一批既有测试在这台机器上**确实无法运行**。
 
 先说明：这不是在推荐你这么干。受支持的路线是官方 ESP-IDF 安装器配 `cmd` 或 PowerShell，见 `docs/development/engineering/environment-setup.zh_CN.md`。下面讲的是：当你已经在 POSIX shell 里了——比如你的工具链或 AI 编码助手就住在那儿——并且希望固件验证门能跑起来时，该怎么做。
 
@@ -119,7 +119,7 @@ for t in test_deep_sleep_contract test_verify_firmware; do python3 tests/$t.py; 
 
 ## 相关文档
 
-- [三字经儿童学习游戏](sanzijing-kids-game/README.zh_CN.md) —— 这些笔记来自的那次构建，含它的验证结果。
+- [道德经日课机](daodejing-daily/README.zh_CN.md) —— 这些笔记来自的那次构建，含它的验证结果。
 - [把应用逻辑留在主机上](host-testable-app-logic.zh_CN.md) —— 在这里**跑得起来**的那些测试，以及它们为什么可移植。
 - `docs/development/engineering/environment-setup.zh_CN.md` —— 受支持的环境搭建路线。
 - `docs/development/engineering/build-and-test.zh_CN.md` —— 验证门检查什么、按什么顺序。

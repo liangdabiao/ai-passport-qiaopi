@@ -17,17 +17,17 @@ Store reusable font files and generated font sources in `fonts/`.
 - Check Flash and internal-RAM impact before adding a font; the ESP32-C3 has no PSRAM.
 - Do not commit fonts whose license does not permit redistribution.
 
-### Three Character Classic learning game
+### Dao De Jing daily reading app
 
-The game ships three uncompressed LVGL bitmap subsets so that every label the user can
-see is drawn by a font we control:
+The application ships three uncompressed LVGL bitmap subsets so that every label the
+reader can see is drawn by a font we control:
 
 | File | Size and format | Use |
 | --- | --- | --- |
-| [`fonts/szj_font_16.c`](fonts/szj_font_16.c) | 16 px, 4 bpp, uncompressed LVGL | Hints, the status bar, and the star row. |
-| [`fonts/szj_font_24.c`](fonts/szj_font_24.c) | 24 px, 4 bpp, uncompressed LVGL | Menu rows, settings labels, and the small candidate lines. |
-| [`fonts/szj_font_32.c`](fonts/szj_font_32.c) | 32 px, 4 bpp, uncompressed LVGL | The verse text and the characters drawn inside the writing grid. |
-| [`fonts/charset.txt`](fonts/charset.txt) | UTF-8 text | The shared 785-code-point inventory, kept so the subset can be reviewed without opening the generated C arrays. |
+| [`fonts/ddj_font_16.c`](fonts/ddj_font_16.c) | 16 px, 4 bpp, uncompressed LVGL | The bottom hint bar, the right-hand stance note inside a list row, and the small caption above the reflection layer. |
+| [`fonts/ddj_font_24.c`](fonts/ddj_font_24.c) | 24 px, 4 bpp, uncompressed LVGL | Top-bar titles, the commentary body, list-row text, and the reflection answers. |
+| [`fonts/ddj_font_32.c`](fonts/ddj_font_32.c) | 32 px, 4 bpp, uncompressed LVGL | The passage text — one sentence per screen. |
+| [`fonts/charset.txt`](fonts/charset.txt) | UTF-8 text | The shared 397-code-point inventory, kept so the subset can be reviewed without opening the generated C arrays. |
 
 All three subsets come from one master font:
 
@@ -36,26 +36,33 @@ All three subsets come from one master font:
   [`notofonts/noto-cjk`](https://github.com/notofonts/noto-cjk).
 - **License:** SIL Open Font License 1.1. Subsetting and redistribution are permitted as
   long as the license text and copyright notice travel with the font.
-- **Character range:** 785 code points — the CJK ideographs used by the verse text and the
-  UI strings, printable ASCII, the CJK punctuation the UI draws, and the filled and empty
-  star glyphs. LVGL's built-in Montserrat font is deliberately **not** used as a fallback:
-  a code point missing from the subset renders as a blank box, so the generator verifies
-  every code point against the source font's `cmap` before converting anything.
+- **Character range:** 397 code points — 286 CJK ideographs taken from the curated chapter
+  sources and the UI strings, plus 111 other code points: printable ASCII, the space, and
+  the CJK punctuation the UI draws. LVGL's built-in Montserrat font is deliberately
+  **not** used as a fallback: a code point missing from the subset renders as a blank box,
+  so the generator verifies every code point against the source font's `cmap` before
+  converting anything.
 - **Converter:** `lv_font_conv` 1.5.3 with `--bpp 4 --no-compress --format lvgl`.
 - **Regenerate (from the repository root):**
 
   ```sh
-  python3 tools/sanzijing/gen_font.py          # rebuild all three sizes
-  python3 tools/sanzijing/gen_font.py --check  # verify the inventory and coverage only
+  python3 tools/daodejing/gen_font.py          # rebuild all three sizes
+  python3 tools/daodejing/gen_font.py --check  # verify the inventory and coverage only
   ```
 
-  Both forms read `tools/sanzijing/sanzijing.txt` and the string literals of `main/*.c|*.h`,
-  so adding a new UI string requires re-running the generator. `--check` is what makes a
-  missing glyph a build-time error rather than a blank box on the device.
+  Both forms read `tools/daodejing/chapters/*.txt` and the string literals of `main/*.c|*.h`,
+  so adding a new UI string or a new chapter requires re-running the generator. `--check` is
+  what makes a missing glyph a build-time error rather than a blank box on the device.
 - **Destination:** compiled into the `main` component by the `target_sources` call in
   `main/CMakeLists.txt`; declare the fonts with `LV_FONT_DECLARE` and select them per
-  widget. `CONFIG_LV_FONT_FMT_TXT_LARGE=y` in `sdkconfig.defaults` is required because the
-  32 px subset exceeds the 16-bit glyph bitmap offset range.
+  widget. `CONFIG_LV_FONT_FMT_TXT_LARGE=y` in `sdkconfig.defaults` is required because
+  LVGL's default text-format font stores a glyph's bitmap offset in 16 bits: the 24 px and
+  32 px subsets carry roughly 114 KB and 203 KB of bitmap data respectively (397 glyphs at
+  288 and 512 bytes each), both past the 64 KB field. The 16 px subset is about 51 KB and
+  would fit, but the flag is per-font-format, so it is set once for all three.
+- **Generated source size (measured):** 293,734 / 565,633 / 920,969 bytes. Hex literals
+  cost several source bytes per byte of bitmap, so the directory listing overstates the
+  Flash footprint — read the size report, not `ls`.
 
 ## Images
 

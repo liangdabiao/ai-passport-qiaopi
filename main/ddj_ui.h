@@ -45,6 +45,16 @@
 #define DDJ_BODY_X       10
 #define DDJ_BODY_W       (DDJ_PAGE_W - 2 * DDJ_BODY_X)                // 210
 
+// ------------------------------------------------------- 每行字数预算 -----
+// 「一屏放得下」不是感觉，是一道除法：内容区宽 210px，同一字号下汉字等宽
+// （Noto Sans CJK 的全角字形，前进宽度就等于字号），所以每行几个字 = 除法取整。
+// 这三个数字必须与 tools/daodejing/content.py 顶部那张表一致 —— 那里用它卡
+// 内容长度，这里用它排版；两边一旦不一致，就会出现「生成阶段过了、屏上却溢了」。
+// ddj_ui.c 用 _Static_assert 把「预算 x 字号 <= 内容区宽」钉在编译期。
+#define DDJ_CHARS_PASSAGE (DDJ_BODY_W / 32)   // 6
+#define DDJ_CHARS_PARA    (DDJ_BODY_W / 24)   // 8
+#define DDJ_CHARS_NOTE    (DDJ_BODY_W / 16)   // 13
+
 // --------------------------------------------------------------- 字体 ------
 // 由 tools/daodejing/gen_font.py 生成到 assets/fonts/，覆盖经文、点拨、参究
 // 与全部界面文案用字。没有 fallback：漏字在生成阶段就报错，不会到屏上变成
@@ -98,6 +108,10 @@ lv_obj_t *ddj_passage_create(lv_obj_t *parent, int x, int y, int w, int h);
 // 一段会折行的正文（点拨、参究问题都用它），左对齐、顶端起排。
 lv_obj_t *ddj_paragraph_create(lv_obj_t *parent, int x, int y, int w, int h);
 
+// 把一段中文折行后写进标签。折行缓冲是模块内的静态区，一次调用写完就拷进
+// 标签，所以调用方不用自己开缓冲区，也不用管它的生命周期。
+void ddj_text_set(lv_obj_t *label, const char *text, int chars_per_line);
+
 // 小字标签（章号、卷名、上次表态这类）。
 lv_obj_t *ddj_note_create(lv_obj_t *parent, int x, int y, int w,
                           const char *text, uint32_t color);
@@ -105,12 +119,55 @@ lv_obj_t *ddj_note_create(lv_obj_t *parent, int x, int y, int w,
 // ---------------------------------------------------------------- 行 ------
 #define DDJ_ROW_BORDER 3
 #define DDJ_ROW_PAD    8
-// 右侧状态小字的保留宽度。16px 字下「第一章」是 3 个字 48px，56 留出余量。
-#define DDJ_ROW_NOTE_W 56
+// 右侧状态小字的保留宽度。16px 字下「第八十一章」是 5 个字 80px，88 留出余量 ——
+// 章号一律用中文数字，与顶栏、正文档位保持一致，不为了省宽度换成阿拉伯数字。
+#define DDJ_ROW_NOTE_W 88
 // 行高按「字库真实行高 + 上下边框」留：24px 那一档行高 29，加 3+3 边框是 35，
 // 44 留出余量。首页要放下 4 行（4x44 + 3x6 间隔 = 194 < 248 的内容区），
 // 再高就装不下了 —— 这个数字是被页面结构反推出来的，不是随手定的。
 #define DDJ_ROW_H      44
 
-ddj_row_t ddj_row_create(lv_obj_t *parent, int x, int y, int w, int h);
+// note_width 为 0 表示这一行没有右侧状态，主文字用满整行。
+ddj_row_t ddj_row_create(lv_obj_t *parent, int x, int y, int w, int h, int note_width);
 void ddj_row_update(ddj_row_t *row, const char *text, const char *note, ddj_state_t state);
+
+// 只改状态，不动文字。
+//
+// 为什么不复用 ddj_row_update：那需要把当前文字再传一遍，而「取当前文字」只有
+// lv_label_get_text 一条路 —— 它返回的是标签内部的缓冲区，而 lv_label_set_text
+// 会先 free 旧文本再复制，于是「把那个指针喂回同一个标签」就是 use-after-free。
+// 与其在调用处小心规避，不如在这里开一个只碰状态的入口。
+void ddj_row_set_state(ddj_row_t *row, ddj_state_t state);
+
+// --------------------------------------------------------------- 列表 -----
+// 纵向可滚动列表。章节目录与「待参」两页共用一套：都是「若干行 + 一个光标 +
+// 光标移出视野时滚过去」，不必写两遍。
+//
+// 容量按全本 81 章写死（ddj_ui.c 里有 _Static_assert 与 DDJ_TOTAL_CHAPTERS 对齐）：
+// 这台机器没有 PSRAM，列表按上限静态分配，不做运行时扩容 —— 81 行 x 24 字节
+// 不到 2KB，比一条会失败的 malloc 路径便宜得多。
+#define DDJ_LIST_CAPACITY 81
+
+typedef struct {
+    lv_obj_t *list;   // 滚动容器
+    ddj_row_t rows[DDJ_LIST_CAPACITY];
+    int count;
+    int sel;
+} ddj_list_t;
+
+// 在 body 上铺一个纵向列表并建 count 行（行内容留空，由调用方用
+// ddj_list_row 取出后填充）。count 会被夹到 [0, DDJ_LIST_CAPACITY]。
+void ddj_list_build(ddj_list_t *list, lv_obj_t *body, int count, int note_width);
+
+// 第 index 行；越界返回 NULL。
+ddj_row_t *ddj_list_row(ddj_list_t *list, int index);
+
+// 把光标放到 index（越界则忽略），刷新行的选中态并滚动到可见。
+void ddj_list_select(ddj_list_t *list, int index);
+
+// 光标上下移动，返回 true 表示光标真的动了（用来决定要不要响一声）。
+bool ddj_list_move(ddj_list_t *list, int delta);
+
+// 清空一页的状态（leave 时用），只清结构体，不碰 LVGL 对象。
+void ddj_list_clear(ddj_list_t *list);
+

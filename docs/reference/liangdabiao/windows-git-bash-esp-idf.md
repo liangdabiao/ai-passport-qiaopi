@@ -4,7 +4,7 @@
 
 # Building ESP-IDF Firmware from Git Bash on Windows
 
-Recorded while building the [San Zi Jing kids game](sanzijing-kids-game/README.md)
+Recorded while building the [Dao De Jing daily reading app](daodejing-daily/README.md)
 from a Git Bash (MSYS2) shell on Windows with ESP-IDF 5.5.3. Two things block you
 outright, one of them is not fixable from inside the shell, and one pre-existing
 part of the test suite genuinely cannot run there.
@@ -181,7 +181,7 @@ for t in test_deep_sleep_contract test_verify_firmware; do python3 tests/$t.py; 
 
 ## Related documents
 
-- [San Zi Jing kids game](sanzijing-kids-game/README.md) — the build these notes
+- [Dao De Jing daily reading app](daodejing-daily/README.md) — the build these notes
   come from, including its verification results.
 - [Keeping application logic on the host](host-testable-app-logic.md) — the tests
   that do run here, and why they are portable.

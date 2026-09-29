@@ -13,6 +13,16 @@ run_static_checks() {
     local test_dir
 
     python3 tools/check_repo.py
+    # 生成物与内容源必须同步：章源改了却忘了重新生成 C 表，在这里就失败。
+    PYTHONDONTWRITEBYTECODE=1 python3 tools/daodejing/gen_content.py --check
+    # 字库清单同理：新增界面文案或新增一章后忘了重跑字库生成器，charset.txt
+    # 就会与源文件脱节。这一步要 fontTools 才能逐个码点核对母字体覆盖，而 CI
+    # 镜像不装 fontTools —— 缺依赖时明确跳过并说明，不假装通过。
+    if python3 -c "import fontTools" >/dev/null 2>&1; then
+        PYTHONDONTWRITEBYTECODE=1 python3 tools/daodejing/gen_font.py --check
+    else
+        echo "skip: tools/daodejing/gen_font.py --check（当前 python3 无 fontTools；字库清单同步未校验）" >&2
+    fi
 
     actionlint_bin="${ACTIONLINT_BIN:-}"
     if [[ -z "${actionlint_bin}" ]]; then
@@ -23,7 +33,7 @@ run_static_checks() {
     fi
     "${actionlint_bin}" -color .github/workflows/*.yml
 
-    test_dir="$(mktemp -d /tmp/ai-passport-host-tests.XXXXXX)"
+    test_dir="$(mktemp -d /tmp/daodejing-host-tests.XXXXXX)"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/test_ui_pixel_math.c main/ui_pixel_math.c \
         -o "${test_dir}/test_ui_pixel_math"
@@ -32,25 +42,27 @@ run_static_checks() {
         tests/test_demo_navigation.c main/demo_navigation.c \
         -o "${test_dir}/test_demo_navigation"
     "${test_dir}/test_demo_navigation"
-    # 三字经游戏的纯逻辑层:经文访问、出题判分、进度模型、会话状态机。
-    # 它们刻意不依赖 ESP-IDF/LVGL,所以能在宿主机上直接跑。
+    # 道德经日课的纯逻辑层：内容访问、折行、进度模型、四层会话状态机。
+    # 它们刻意不依赖 ESP-IDF/LVGL，所以能在宿主机上直接跑。
+    #
+    # test_ddj_wrap 刻意连了 ddj_chapter/ddj_text：它断言的是「真实经文在真实
+    # 每行字数预算下都不超行宽」，也就是「一屏放得下」这句话本身。
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
-        tests/test_szj_text_util.c main/szj_text_util.c main/szj_text.c \
-        -o "${test_dir}/test_szj_text_util"
-    "${test_dir}/test_szj_text_util"
+        tests/test_ddj_chapter.c main/ddj_chapter.c main/ddj_text.c \
+        -o "${test_dir}/test_ddj_chapter"
+    "${test_dir}/test_ddj_chapter"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
-        tests/test_szj_quiz.c main/szj_quiz.c main/szj_text_util.c main/szj_text.c \
-        -o "${test_dir}/test_szj_quiz"
-    "${test_dir}/test_szj_quiz"
+        tests/test_ddj_progress.c main/ddj_progress.c \
+        -o "${test_dir}/test_ddj_progress"
+    "${test_dir}/test_ddj_progress"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
-        tests/test_szj_progress.c main/szj_progress.c \
-        -o "${test_dir}/test_szj_progress"
-    "${test_dir}/test_szj_progress"
+        tests/test_ddj_session.c main/ddj_session.c main/ddj_chapter.c main/ddj_text.c \
+        -o "${test_dir}/test_ddj_session"
+    "${test_dir}/test_ddj_session"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
-        tests/test_szj_session.c main/szj_session.c main/szj_quiz.c \
-        main/szj_text_util.c main/szj_text.c \
-        -o "${test_dir}/test_szj_session"
-    "${test_dir}/test_szj_session"
+        tests/test_ddj_wrap.c main/ddj_wrap.c main/ddj_chapter.c main/ddj_text.c \
+        -o "${test_dir}/test_ddj_wrap"
+    "${test_dir}/test_ddj_wrap"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Icomponents/bsp/src \
         tests/test_bsp_display_rounding.c components/bsp/src/bsp_display_rounding.c \
         -o "${test_dir}/test_bsp_display_rounding"
@@ -97,8 +109,8 @@ run_firmware_checks() (
         return 1
     fi
 
-    validation_build_dir="$(mktemp -d /tmp/ai-passport-firmware.XXXXXX)"
-    trap 'case "${validation_build_dir}" in /tmp/ai-passport-firmware.*) rm -rf -- "${validation_build_dir}" ;; esac' EXIT
+    validation_build_dir="$(mktemp -d /tmp/daodejing-firmware.XXXXXX)"
+    trap 'case "${validation_build_dir}" in /tmp/daodejing-firmware.*) rm -rf -- "${validation_build_dir}" ;; esac' EXIT
 
     SDKCONFIG_DEFAULTS="${repo_root}/sdkconfig.defaults" \
         idf.py -B "${validation_build_dir}" \

@@ -15,16 +15,16 @@
 - 添加字库前评估 Flash 与内部 RAM 影响；ESP32-C3 无 PSRAM。
 - 不提交许可不允许分发的字库。
 
-### 三字经儿童学习游戏
+### 道德经日课机
 
-游戏内置三档未压缩的 LVGL 点阵子集，保证用户能看到的每一个字都由我们可控的字库绘制：
+应用内置三档未压缩的 LVGL 点阵子集，保证读者能看到的每一个字都由我们可控的字库绘制：
 
 | 文件 | 尺寸与格式 | 用途 |
 | --- | --- | --- |
-| [`fonts/szj_font_16.c`](fonts/szj_font_16.c) | 16 px、4bpp、未压缩 LVGL 点阵 | 提示条、状态栏与星星行。 |
-| [`fonts/szj_font_24.c`](fonts/szj_font_24.c) | 24 px、4bpp、未压缩 LVGL 点阵 | 菜单行、设置项与较小的候选句。 |
-| [`fonts/szj_font_32.c`](fonts/szj_font_32.c) | 32 px、4bpp、未压缩 LVGL 点阵 | 经文大字与田字格里示范的字。 |
-| [`fonts/charset.txt`](fonts/charset.txt) | UTF-8 文本 | 三档共用的 785 个码点清单，便于在不打开生成代码的前提下复核子集内容。 |
+| [`fonts/ddj_font_16.c`](fonts/ddj_font_16.c) | 16 px、4bpp、未压缩 LVGL 点阵 | 底部提示条、列表行右侧的状态注，以及「参」这一层上方的小标签。 |
+| [`fonts/ddj_font_24.c`](fonts/ddj_font_24.c) | 24 px、4bpp、未压缩 LVGL 点阵 | 顶栏标题、点拨正文、列表行文字与三个选取项。 |
+| [`fonts/ddj_font_32.c`](fonts/ddj_font_32.c) | 32 px、4bpp、未压缩 LVGL 点阵 | 原文——一屏一句。 |
+| [`fonts/charset.txt`](fonts/charset.txt) | UTF-8 文本 | 三档共用的 397 个码点清单，便于在不打开生成代码的前提下复核子集内容。 |
 
 三档子集来自同一份母字体：
 
@@ -33,23 +33,28 @@
   [`notofonts/noto-cjk`](https://github.com/notofonts/noto-cjk)。
 - **许可**：SIL Open Font License 1.1。允许子集化与再分发，前提是许可文本与版权声明
   随字体一同提供。
-- **字符范围**：785 个码点——经文与界面文案用到的汉字、可打印 ASCII、界面自绘的中文标点，
-  以及实心/空心星星。这里刻意**不**用 LVGL 内置 Montserrat 兜底：子集里缺的码点会渲染成
-  空白框，所以生成脚本在转换前会逐个码点核对母字体的 `cmap`。
+- **字符范围**：397 个码点——其中 286 个汉字取自已整理的章节源文件与界面文案，另 111 个
+  是可打印 ASCII、空格，以及界面自绘的中文标点。这里刻意**不**用 LVGL 内置 Montserrat
+  兜底：子集里缺的码点会渲染成空白框，所以生成脚本在转换前会逐个码点核对母字体的 `cmap`。
 - **转换工具**：`lv_font_conv` 1.5.3，参数 `--bpp 4 --no-compress --format lvgl`。
 - **重新生成（在仓库根目录执行）：**
 
   ```sh
-  python3 tools/sanzijing/gen_font.py          # 重建三档字库
-  python3 tools/sanzijing/gen_font.py --check  # 只校验清单与覆盖，不转换
+  python3 tools/daodejing/gen_font.py          # 重建三档字库
+  python3 tools/daodejing/gen_font.py --check  # 只校验清单与覆盖，不转换
   ```
 
-  两种方式都会读取 `tools/sanzijing/sanzijing.txt` 与 `main/*.c|*.h` 里的字符串字面量，
-  也就是说**新增界面文案后必须重新跑生成脚本**。`--check` 的作用是把「漏字」变成构建期错误，
-  而不是设备上的一块空白。
+  两种方式都会读取 `tools/daodejing/chapters/*.txt` 与 `main/*.c|*.h` 里的字符串字面量，
+  也就是说**新增界面文案或新增一章后必须重新跑生成脚本**。`--check` 的作用是把「漏字」变成
+  构建期错误，而不是设备上的一块空白。
 - **目标放置路径**：由 `main/CMakeLists.txt` 的 `target_sources` 编入 `main` 组件；使用时用
   `LV_FONT_DECLARE` 声明，并按控件逐个指定。`sdkconfig.defaults` 里的
-  `CONFIG_LV_FONT_FMT_TXT_LARGE=y` 是必需的——32 px 那一档的位图偏移量已超出 16 位范围。
+  `CONFIG_LV_FONT_FMT_TXT_LARGE=y` 是必需的——LVGL 默认的文本格式字库用 16 位存放字形位图
+  偏移量，而 24 px 与 32 px 两档分别携带约 114 KB 与 203 KB 位图数据（397 个字形，每个
+  288 与 512 字节），都超出了 64 KB 的字段上限。16 px 那档约 51 KB 本来放得下，但这个开关
+  是按字体格式生效的，所以三档一起开。
+- **生成的源码体积（实测）**：293,734 / 565,633 / 920,969 字节。十六进制字面量的源码开销
+  是位图的数倍，所以目录列表会高估 Flash 占用——要看体积报告，不要看 `ls`。
 
 ## 图片（images）
 

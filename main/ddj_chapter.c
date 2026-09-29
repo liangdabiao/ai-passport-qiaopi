@@ -105,3 +105,49 @@ bool ddj_chinese_number(int number, char *out, size_t capacity)
     out[written] = '\0';
     return true;
 }
+
+bool ddj_chapter_label(int number, char *out, size_t capacity)
+{
+    if (!out || capacity == 0) return false;
+    out[0] = '\0';
+
+    char numeral[DDJ_CHINESE_NUMBER_CAPACITY];
+    if (!ddj_chinese_number(number, numeral, sizeof(numeral))) return false;
+    const size_t numeral_bytes = strlen(numeral);
+
+    // 「第」+ 中文数字 + 「章」+ NUL。先算准再写，不够就整体拒绝。
+    const size_t needed = 2 * CJK_BYTES + numeral_bytes + 1;
+    if (capacity < needed) return false;
+
+    size_t written = 0;
+    memcpy(out + written, "第", CJK_BYTES);
+    written += CJK_BYTES;
+    memcpy(out + written, numeral, numeral_bytes);
+    written += numeral_bytes;
+    memcpy(out + written, "章", CJK_BYTES);
+    written += CJK_BYTES;
+    out[written] = '\0';
+    return true;
+}
+
+bool ddj_chapter_heading(const ddj_chapter_t *chapter, char *out, size_t capacity)
+{
+    if (!out || capacity == 0) return false;
+    out[0] = '\0';
+    if (!chapter) return false;
+
+    char label[DDJ_CHAPTER_LABEL_CAPACITY];
+    if (!ddj_chapter_label(chapter->number, label, sizeof(label))) return false;
+
+    const size_t label_bytes = strlen(label);
+    const size_t title_bytes = strlen(chapter->title);
+
+    // 「第X章」+ 空格 + 章题 + NUL。
+    if (capacity < label_bytes + 1u + title_bytes + 1u) return false;
+
+    memcpy(out, label, label_bytes);
+    out[label_bytes] = ' ';
+    memcpy(out + label_bytes + 1u, chapter->title, title_bytes);
+    out[label_bytes + 1u + title_bytes] = '\0';
+    return true;
+}

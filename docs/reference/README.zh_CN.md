@@ -53,15 +53,15 @@
 
 **经验条目：**
 
-- [为 LVGL 裁剪中文字库子集](liangdabiao/cjk-font-subsetting-for-lvgl.zh_CN.md) — 从经文与界面文案推导字符清单而不是手写；转换前逐个码点核对母字体覆盖；点阵超过 64 KB 时为何必须开「大字体」格式；以及三档子集在 Flash 上的真实代价。
-- [让字库度量决定版式](liangdabiao/font-metrics-driven-layout.zh_CN.md) — 用 `line_height` 加边框反解行高而不是挑整数、把每条界面文案对着可用宽度量一遍、格式化缓冲区按最坏情况开，以及一个把字符数当字节数导致显示缺失的缺陷。
-- [把应用逻辑留在主机上](liangdabiao/host-testable-app-logic.zh_CN.md) — 纯逻辑与硬件模块的分界、把「失败时不动输出」当成可测契约、确定性的随机播种、对每一课每一题的全量扫描，以及存档格式的拒绝路径测试。
-- [在 Windows 的 Git Bash 里构建 ESP-IDF 固件](liangdabiao/windows-git-bash-esp-idf.zh_CN.md) — 设了 `MSYSTEM` 时 `idf.py` 为何静默退出且无法在 shell 内取消、虚拟环境解释器不匹配、用 `zig cc` 取得宿主编译器，以及基于桩的 demo 运行时测试为何需要 GNU 链接器。
-- [把经文整理成生成的 C 数组](liangdabiao/curriculum-text-curation-pipeline.zh_CN.md) — 在源文件里一次性定完版本差异、一句一行且无语法可写错的格式、由生成器推导的常量，以及让过期生成物直接失败构建的 `--check` 模式。
+- [为 LVGL 裁剪中文字库子集](liangdabiao/cjk-font-subsetting-for-lvgl.zh_CN.md) — 从内容源与界面文案推导字符清单而不是手写；转换前逐个码点核对母字体覆盖；位图超过 64 KB 时为何必须开「大字体」格式；以及 397 个码点的子集在 Flash 上的真实代价。
+- [让字库度量决定版式](liangdabiao/font-metrics-driven-layout.zh_CN.md) — 把「一行放得下几个字」变成一次除法、先证明字形步进等于字号再相信那次除法、在生成期与渲染期同时守住同一个上限，以及一个把字符数当字节数导致显示缺失的缺陷。
+- [把应用逻辑留在主机上](liangdabiao/host-testable-app-logic.zh_CN.md) — 纯逻辑与硬件模块的分界、把「失败时不动输出」当成可测契约、存档格式的拒绝路径测试，以及拿**真实经文**而不是它的副本去测折行规则。
+- [在 Windows 的 Git Bash 里构建 ESP-IDF 固件](liangdabiao/windows-git-bash-esp-idf.zh_CN.md) — 设了 `MSYSTEM` 时 `idf.py` 为何静默退出且无法在 shell 内取消、虚拟环境解释器不匹配、用 `zig cc` 取得宿主编译器，以及让一个本来能跑的主机测试看起来像代码缺陷的链接器与文件系统限制。
+- [把章节内容整理成生成的 C 数组](liangdabiao/chapter-content-pipeline.zh_CN.md) — 一章一个源文件、让语法无处可写错、在生成期就卡住屏幕容量上限、让过期生成物直接失败构建的 `--check` 模式，以及让 C 表与字库清单共用同一个「真相源」模块。
 
 **应用档案：**
 
-- [三字经儿童学习游戏](liangdabiao/sanzijing-kids-game/README.zh_CN.md) — 一个全离线中文诵读启蒙游戏，含接句闯关、错题本、认字卡、星级与 NVS 进度。
+- [道德经日课机](liangdabiao/daodejing-daily/README.zh_CN.md) — 面向成年读者的全离线日课应用：一天一章、一屏一口，每章收在一个没有对错的省思提问上，待读队列由读者自己记录的心得状态推导而来。
 
 ## 新增经验条目
 
