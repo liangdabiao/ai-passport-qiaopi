@@ -16,8 +16,12 @@
 #define DDJ_OPTION_COUNT 3
 #define DDJ_PONDER_OPTION_COUNT 3
 
-/* 一条点拨必须一屏放得下，生成阶段按这个上限核对。 */
-#define DDJ_POINT_MAX_CHARS 60
+/* 一层一屏放得下的字数上限。数值来自 content.py，与 240x320 面板的
+ * 实际版式对齐（见 content.py 顶部那张对照表）。 */
+#define DDJ_PASSAGE_MAX_CHARS 24
+#define DDJ_POINT_MAX_CHARS 48
+#define DDJ_QUESTION_MAX_CHARS 26
+#define DDJ_OPTION_MAX_CHARS 7
 
 typedef enum {
     DDJ_VOLUME_DAO = 0,   /* 道经，第 1 - 37 章 */

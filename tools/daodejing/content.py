@@ -44,8 +44,22 @@ TOTAL_CHAPTERS = 81
 DAODEJING_VOLUMES = ("道经", "德经")
 DAO_VOLUME_LAST_CHAPTER = 37
 
-# One point must fit a single screen of the 240x320 panel.
-POINT_MAX_CHARS = 60
+# Screen-fit limits. The panel is 240x320 with a 230x310 paper card, and the
+# reading area is 210 px wide. Chinese glyphs at a given size are all the same
+# advance, so "how many characters fit on one screen" is arithmetic, not taste:
+#
+#   layer     font  px/char  per line  lines  limit
+#   原文      32     32       6         4      24
+#   点拨      24     24       8         6      48
+#   参究问题  16     16       13        2      26
+#   参究选项  24     24       7         1      7
+#
+# These are enforced here so an over-long line fails the generator instead of
+# silently overflowing the panel at runtime.
+PASSAGE_MAX_CHARS = 24
+POINT_MAX_CHARS = 48
+QUESTION_MAX_CHARS = 26
+OPTION_MAX_CHARS = 7
 MIN_POINTS = 3
 MAX_POINTS = 5
 OPTION_SLOTS = 3
@@ -159,6 +173,13 @@ def _parse(path: Path) -> Chapter:
     passages = tuple(sections["原文"])
     if not passages:
         raise ContentError(f"{path.name}: [原文] is empty")
+    for index, passage in enumerate(passages):
+        if len(passage) > PASSAGE_MAX_CHARS:
+            raise ContentError(
+                f"{path.name}: passage {index + 1} is {len(passage)} characters, "
+                f"over the {PASSAGE_MAX_CHARS}-character limit for one screen; "
+                "split it into another screen instead"
+            )
 
     points = tuple(sections["点拨"])
     if not MIN_POINTS <= len(points) <= MAX_POINTS:
@@ -169,11 +190,16 @@ def _parse(path: Path) -> Chapter:
         if len(point) > POINT_MAX_CHARS:
             raise ContentError(
                 f"{path.name}: point {index + 1} is {len(point)} characters, "
-                f"over the {POINT_MAX_CHARS} limit for one screen"
+                f"over the {POINT_MAX_CHARS}-character limit for one screen"
             )
 
     if not question:
         raise ContentError(f"{path.name}: [参究] is missing question = ...")
+    if len(question) > QUESTION_MAX_CHARS:
+        raise ContentError(
+            f"{path.name}: question is {len(question)} characters, "
+            f"over the {QUESTION_MAX_CHARS}-character limit for one screen"
+        )
     if len(options) != OPTION_SLOTS:
         raise ContentError(
             f"{path.name}: [参究] needs exactly {OPTION_SLOTS} options, got {len(options)}"
@@ -181,6 +207,11 @@ def _parse(path: Path) -> Chapter:
     for slot, option in enumerate(options):
         if not option:
             raise ContentError(f"{path.name}: option slot {slot} is empty")
+        if len(option) > OPTION_MAX_CHARS:
+            raise ContentError(
+                f"{path.name}: option slot {slot} is {len(option)} characters, "
+                f"over the {OPTION_MAX_CHARS}-character limit for one row"
+            )
 
     return Chapter(
         number=number,
