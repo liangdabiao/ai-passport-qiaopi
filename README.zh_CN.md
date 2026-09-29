@@ -62,3 +62,6 @@
 - 内容与音频移植自 `novel-to-game` 仓库的 `game-adaptations/qiaopi/build/app`（一个零构建的网页版单页游戏）。
 - 本仓库与**三字经儿童学习游戏**（`ai-passport`）、**道德经日课机**（`daodejing-daily`）同源派生，
   三者共用同一套仓库规范、工具链与验证门禁。
+
+
+thanks  https://linux.do

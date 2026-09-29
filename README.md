@@ -74,3 +74,6 @@ offset `0x0`.
 - This repository is a sibling of the **Three Character Classic kids game** (`ai-passport`) and the
   **Daodejing daily reader** (`daodejing-daily`); the three share one set of repository conventions,
   one toolchain and one verification gate.
+
+
+thanks  https://linux.do
