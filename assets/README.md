@@ -22,11 +22,11 @@ Store reusable font files and generated font sources in `fonts/`.
 The application ships three uncompressed LVGL bitmap subsets so that every label the
 reader can see is drawn by a font we control:
 
-| File | Size and format | Use |
+| File | Format | Use |
 | --- | --- | --- |
-| [`fonts/qpq_font_16.c`](fonts/qpq_font_16.c) | 16 px, 4 bpp, uncompressed LVGL | The bottom hint bar, the right-hand stance note inside a list row, and the small caption above the reflection layer. |
-| [`fonts/qpq_font_24.c`](fonts/qpq_font_24.c) | 24 px, 4 bpp, uncompressed LVGL | Top-bar titles, the commentary body, list-row text, and the reflection answers. |
-| [`fonts/qpq_font_32.c`](fonts/qpq_font_32.c) | 32 px, 4 bpp, uncompressed LVGL | The passage text — one sentence per screen. |
+| [`fonts/qpq_font_16.c`](fonts/qpq_font_16.c) | 16 px, 4 bpp, uncompressed LVGL | Top-bar titles and counters, the bottom hint bar, the right-hand note inside a list row, the small captions and the source line on the answer page, and the statistics lines on the title and summary pages. |
+| [`fonts/qpq_font_24.c`](fonts/qpq_font_24.c) | 24 px, 4 bpp, uncompressed LVGL | The four candidates on the question page, and the result, explanation, filled sentence and full text on the answer page. |
+| [`fonts/qpq_font_32.c`](fonts/qpq_font_32.c) | 32 px, 4 bpp, uncompressed LVGL | The one element the reader must not misread: the sentence being completed, plus the rank headline on the summary page and the headline on the title page. |
 | [`fonts/charset.txt`](fonts/charset.txt) | UTF-8 text | The shared 1303-code-point inventory, kept so the subset can be reviewed without opening the generated C arrays. |
 
 All three subsets come from one master font:
@@ -36,9 +36,9 @@ All three subsets come from one master font:
   [`notofonts/noto-cjk`](https://github.com/notofonts/noto-cjk).
 - **License:** SIL Open Font License 1.1. Subsetting and redistribution are permitted as
   long as the license text and copyright notice travel with the font.
-- **Character range:** 1303 code points — 1079 CJK ideographs taken from the question bank
-  sources and the UI strings, plus 111 other code points: printable ASCII, the space, and
-  the CJK punctuation the UI draws. LVGL's built-in Montserrat font is deliberately
+- **Character range:** 1303 code points — 1079 CJK ideographs, plus 224 other code points:
+  printable ASCII, the space, the CJK punctuation the UI draws, and the fullwidth low line
+  that draws the blank the reader fills in. LVGL's built-in Montserrat font is deliberately
   **not** used as a fallback: a code point missing from the subset renders as a blank box,
   so the generator verifies every code point against the source font's `cmap` before
   converting anything.
@@ -50,19 +50,26 @@ All three subsets come from one master font:
   python3 tools/qiaopi/gen_font.py --check  # verify the inventory and coverage only
   ```
 
-  Both forms read `tools/qiaopi/chapters/*.txt` and the string literals of `main/*.c|*.h`,
-  so adding a new UI string or a new chapter requires re-running the generator. `--check` is
-  what makes a missing glyph a build-time error rather than a blank box on the device.
+  Both forms read `tools/qiaopi/bank.txt` and the string literals of `main/*.c|*.h`, so
+  adding a UI string or a new question requires re-running the generator. `--check` is what
+  makes a missing glyph a build-time error rather than a blank box on the device.
 - **Destination:** compiled into the `main` component by the `target_sources` call in
   `main/CMakeLists.txt`; declare the fonts with `LV_FONT_DECLARE` and select them per
   widget. `CONFIG_LV_FONT_FMT_TXT_LARGE=y` in `sdkconfig.defaults` is required because
-  LVGL's default text-format font stores a glyph's bitmap offset in 16 bits: the 24 px and
-  32 px subsets carry roughly 114 KB and 203 KB of bitmap data respectively (1303 glyphs at
-  288 and 512 bytes each), both past the 64 KB field. The 16 px subset is about 51 KB and
-  would fit, but the flag is per-font-format, so it is set once for all three.
-- **Generated source size (measured):** 293,734 / 565,633 / 920,969 bytes. Hex literals
-  cost several source bytes per byte of bitmap, so the directory listing overstates the
-  Flash footprint — read the size report, not `ls`.
+  LVGL's default text-format font stores a glyph's bitmap offset in 16 bits, and **all
+  three** subsets are past that 65,536-byte field:
+
+  | Size | Glyph bitmap data | Past the 16-bit offset field |
+  | --- | --- | --- |
+  | 16 px | 145,642 bytes (142.2 KB) | yes |
+  | 24 px | 322,451 bytes (314.9 KB) | yes |
+  | 32 px | 551,508 bytes (538.6 KB) | yes |
+
+  The flag is per font format, not per font, so setting it once covers the three of them.
+- **Generated source size (measured):** 1,068,125 / 2,116,944 / 3,482,000 bytes. Hex
+  literals cost several source bytes per byte of bitmap, so the directory listing
+  overstates the Flash footprint by roughly a factor of six — read the byte counts in the
+  table above, not `ls`.
 
 ## Images
 
@@ -88,3 +95,63 @@ Store reusable music and sound-effect sources in `music/`.
 - Prefer 16 kHz, 16-bit mono PCM when it matches the current BSP audio path.
 - Check Flash and internal-RAM cost before embedding audio; stream or chunk long recordings.
 - Do not commit media without redistribution permission.
+
+### Qiaopi Quiz app
+
+This application is the first one in the family that **plays recordings**, not just
+synthesised tones. It ships a single self-describing binary instead of a directory of
+media files:
+
+| File | Size and format | Use |
+| --- | --- | --- |
+| [`audio/qpq_audio.bin`](audio/qpq_audio.bin) | 5,298,976 bytes, IMA-ADPCM 4-bit, 16 kHz mono | One blob holding all 92 clips as one memory-mapped `rodata` region. |
+| [`audio/clips.txt`](audio/clips.txt) | UTF-8 text | The clip inventory with duration and byte length, so the blob can be reviewed without a hex editor. |
+
+- **Content:** 92 clips, 662 seconds in total (11 min 2 s). Clips 0–90 are the narration
+  that plays after an answer — the correct sentence read aloud in dialect, one per
+  question. Clip 91 is the background music.
+- **Format:** IMA-ADPCM, 4-bit, 16 kHz mono. It is exactly 4 bytes of encoded data for
+  every 8 source samples, so 4.00:1 against 16-bit PCM at the same rate — and 6.00:1
+  against the 24 kHz mono PCM that some of the sources turned out to be, since the
+  downsample to 16 kHz is part of the saving. Decoding is one table lookup and a shift per
+  sample, which is what makes it viable on a single-core C3 with no PSRAM; a real MP3
+  decoder would have cost roughly 28 KB of heap and a much larger dependency for no
+  audible gain at this speaker size.
+- **Blob layout:** a 16-byte header (magic, version, clip count, sample rate, reserved
+  word), then a fixed-size 8-byte index entry of `(offset, sample count)` per clip, then
+  the clips themselves. Each clip is an int16 first sample, a uint8 initial step index, a
+  reserved byte, and then the nibbles, two samples per byte. Every field is fixed-width and
+  read byte by byte — the blob is placed in Flash by the linker, and a RISC-V unaligned
+  load traps, so nothing here is read through a cast. Opening the blob validates the whole
+  index and rejects it as a whole if anything disagrees; the rejection paths are covered by
+  a host test. `audio/clips.txt` also records the SHA-256 of each source file, which
+  `--check` re-verifies when the sources are reachable.
+- **Regenerate (from the repository root):**
+
+  ```sh
+  python3 tools/qiaopi/gen_audio.py          # re-encode all 92 clips
+  python3 tools/qiaopi/gen_audio.py --check  # verify the blob against the sources only
+  ```
+
+  Both forms need `ffmpeg` on `PATH` to decode the sources. The encoder is
+  `tools/qiaopi/adpcm.py`, and the same run emits `tests/qpq_adpcm_fixture.h` — a fixed
+  source/encoded/expected triple that the C decoder is asserted against, so the two
+  implementations cannot drift apart unnoticed.
+- **Destination:** attached to the `main` component by `target_add_binary_data` in
+  `main/CMakeLists.txt`. The linker generates the symbol from the file name
+  (`_binary_qpq_audio_bin_start`), and `main/qpq_audio_blob.c` is the one file that
+  declares it. Do not also add the blob to `SRCS`, and do not generate it as a C array: a
+  5 MB array slows the compile and link noticeably and the result cannot be reviewed.
+- **Source:** `game-adaptations/qiaopi/build/app/audio/` in the `novel-to-game`
+  repository, which carries an MIT license (`Copyright (c) 2026 NovelToGame
+  contributors`). Note the discrepancy before publishing: that repository's build brief
+  states that sound effects are synthesised with the Web Audio API and that there are
+  **zero** audio files, yet the built app contains 92. The provenance of the individual
+  recordings is not documented there, so redistribution permission for the narration and
+  the music should be confirmed with the upstream author before this app is distributed
+  beyond the device it was built for.
+- **Audit note:** the source audio adds up to 14.94 MB, which looked almost too large for
+  a Flash-based device. It was not — 31 of the 92 files (9.37 MB, 63% of the total) were
+  named `.mp3` but actually contained uncompressed 24 kHz mono PCM. The pipeline decodes
+  every source with `ffmpeg` and reads the codec that comes back, not the extension, which
+  is why the result fits in 5 MB instead of 15.
