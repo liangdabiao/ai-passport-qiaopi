@@ -149,7 +149,9 @@ _Static_assert(TITLE_STATS_Y + TITLE_STATS_H <= QPQ_BODY_H,
 ## 验证
 
 - **构建：** 空目录冷编译，**1,865 个编译单元、约 50 分钟、零告警零错误**；合并镜像
-  从 0x0 偏移产出并逐段校验通过。
+  从 0x0 偏移产出并逐段校验通过。门禁自己给出的收尾三行：
+  `Firmware layout: PASS (app 7140368 / 8323072 bytes in 'factory' at 0x10000)`、
+  `Merged firmware: PASS (7205904 bytes, flash at 0x0)`、`Firmware build: PASS`。
 - **镜像：** 应用 7,140,368 字节，装在 8,323,072 字节的 `factory` 分区里（余量 14%）；
   合并镜像 7,205,904 字节，SHA-256 `0d37d878…`，内嵌版本 `fea720f` ——
   也就是固件源码实际来自的那个提交。它之后的纯文档提交不会改变镜像，这一点可以验证

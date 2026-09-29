@@ -184,7 +184,9 @@ line. Searching backwards has no such hole.
 
 - **Build:** cold build from an empty directory — **1,865 compilation units, ~50
   minutes, zero warnings and zero errors**. The merged image is produced from
-  offset 0 and verified section by section.
+  offset 0 and verified section by section. The gate's own closing lines:
+  `Firmware layout: PASS (app 7140368 / 8323072 bytes in 'factory' at 0x10000)`,
+  `Merged firmware: PASS (7205904 bytes, flash at 0x0)`, `Firmware build: PASS`.
 - **Image:** app 7,140,368 bytes inside the 8,323,072-byte `factory` partition (14%
   free); merged firmware 7,205,904 bytes, SHA-256 `0d37d878...`, embedded version
   `fea720f` — the commit the firmware sources were built from. Documentation-only
