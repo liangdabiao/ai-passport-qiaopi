@@ -1,0 +1,55 @@
+# --- 目标芯片 ---
+CONFIG_IDF_TARGET="esp32c3"
+# 注:ESP32-C3 无 PSRAM,故不设 CONFIG_SPIRAM。
+
+# --- Flash ---
+# FoloToy AI Passport 当前产品/固件基线使用 8MB Flash。
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+# 固定 8MB 镜像头，关闭 detect，便于 idf.py merge-bin。
+CONFIG_ESPTOOLPY_HEADER_FLASHSIZE_UPDATE=n
+# 默认模板只保留 NVS、PHY data 和占用剩余空间的 factory app；用户可按需修改。
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# --- 控制台:USB-Serial-JTAG(C3 原生 USB,GPIO18/19)---
+# 不用 UART0:其默认 TX=GPIO21 与本板背光引脚冲突。
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# --- LVGL ---
+CONFIG_LV_COLOR_DEPTH_16=y
+# 20 ms display refresh period targets up to 50 FPS when rendering and SPI
+# transfer complete within the same budget.
+CONFIG_LV_DEF_REFR_PERIOD=20
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_20=y
+# LVGL 内置 malloc 池大小(KB)。它是独立静态区、不与系统堆共享,配大了会白白占用 RAM。
+# 三字经应用要同时持有约 40~60 个控件(首页一行 3 个对象、认字卡三格田字格各 13 个),
+# 24KB 会不够;64KB 留出余量,仍只占内部 RAM 的一小部分(本板无 PSRAM,但也无 Wi-Fi/BT
+# 运行时占用)。
+CONFIG_LV_MEM_SIZE_KILOBYTES=64
+
+# --- 中文字库 ---
+# 界面文字全部由 tools/sanzijing/gen_font.py 生成的 16/24/32 三档子集提供
+# (assets/fonts/szj_font_*.c),不依赖 LVGL 内置的 Source Han 子集,也不依赖
+# Montserrat 兜底 —— 生成阶段会逐个码点核对字体覆盖,漏字会直接报错而不是变成空白框。
+# 未压缩点阵直接放在 Flash 里内存映射读取,不需要 CONFIG_LV_USE_FONT_COMPRESSED。
+# 32px 那一档的位图约 316 KB,字形偏移量按字节存放,超过 16 位能表达的范围,
+# 所以必须打开 LVGL 的「大字体」模式(它把 bitmap_index 从 uint16 换成 uint32)。
+CONFIG_LV_FONT_FMT_TXT_LARGE=y
+
+# --- 系统 ---
+CONFIG_FREERTOS_HZ=1000
+
+# --- Bluetooth LE / NimBLE ---
+# ESP32-C3 仅支持 BLE；示例只启用单连接 peripheral 所需的最小 host 配置。
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=y
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+CONFIG_BT_NIMBLE_HOST_BASED_PRIVACY=n
+CONFIG_BT_NIMBLE_NVS_PERSIST=n

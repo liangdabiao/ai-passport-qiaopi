@@ -1,0 +1,208 @@
+<p align="right">
+  <a href="curriculum-text-curation-pipeline.zh_CN.md">简体中文</a> · <strong>English</strong>
+</p>
+
+# Curating a Curriculum Text into Generated C
+
+Written for the [San Zi Jing kids game](sanzijing-kids-game/README.md), whose
+entire content is a 1,212-character classic text. Turning that text into firmware
+data took three things: agreeing on one edition, picking a file format that makes
+disagreement visible, and generating code from it so the C tables, the character
+inventory, and the font subsets can never drift apart.
+
+## The problem: the text itself is not settled
+
+The *Three Character Classic* circulates at several lengths. The common modern
+edition runs about 380 lines of three characters — roughly 1,140 characters —
+while expanded editions carry additional sections on the dynastic histories.
+Individual characters also vary between printings.
+
+For a reading app this is not an academic question. If a lesson displays a
+variant character, the app teaches the variant. So the text has to be curated
+deliberately, and the result has to be one file that everything else derives
+from.
+
+Comparing the common edition against an expanded one produced two kinds of
+difference, and both had to be resolved deliberately:
+
+- **Seven lines differ by a single character.** Each was resolved in favour of
+  the reading that matches the sense of its passage; the Chinese page of this
+  entry lists each pair.
+- **Two blocks — twenty-four lines in total — are missing from the shorter
+  edition entirely**: an eight-line block on the order in which to read the
+  histories, and a sixteen-line block covering the last dynasties. Both were
+  restored.
+
+380 + 24 = 404 lines, 1,212 characters, 565 distinct characters.
+
+The point is not that one edition is "right". It is that the differences are
+finite, enumerable, and cheap to resolve once — provided you resolve them in a
+file that everything else is generated from, rather than in the code.
+
+## One line per sentence, no punctuation
+
+The curated file is deliberately austere: one three-character sentence per line,
+nothing else. No punctuation, no line numbers, no comments, no metadata header.
+
+```text
+<three-character line>
+<three-character line>
+<three-character line>
+<three-character line>
+```
+
+(The Chinese page of this entry shows the real opening four lines.)
+
+Four reasons this format is worth insisting on:
+
+- **The line is the unit the application counts in.** A lesson is four lines, a
+  question is about one line, a flashcard is one line. Making the file's unit
+  match the domain's unit removes a whole layer of parsing.
+- **It diffs cleanly.** A reviewer sees one changed character on one changed
+  line, not a reflowed paragraph.
+- **It has no syntax to get wrong.** No quoting, no escaping, no separators that
+  can be confused with content.
+- **The absence of punctuation is content, not laziness.** The original has none;
+  adding it would change what the app displays.
+
+## Generate the C tables, and derive the constants from the data
+
+`tools/sanzijing/gen_content.py` reads that file and writes `main/szj_text.h` and
+`main/szj_text.c`. The point worth copying is that the header's constants are
+**computed from the data**, not written by hand:
+
+```c
+#define SZJ_LINE_BYTES 10
+#define SZJ_LINES_PER_STANZA 4
+#define SZJ_LINE_COUNT 404
+#define SZJ_STANZA_COUNT 101
+#define SZJ_CJK_CHAR_COUNT 1212
+```
+
+A hand-maintained count goes wrong the first time somebody appends a line, and
+the failure mode is a lesson that is silently one line short. Deriving it means
+adding a line to the text file is the *only* edit required.
+
+## Validate in the generator, with the offending line number
+
+The generator refuses to emit anything unless the text satisfies its shape rules,
+and it names the line that broke:
+
+```python
+for index, line in enumerate(lines):
+    if len(line) != CHARS_PER_LINE:
+        raise SystemExit(f"{TEXT}: line {index + 1} has {len(line)} characters, expected {CHARS_PER_LINE}")
+    if not all("\u4e00" <= c <= "\u9fff" for c in line):
+        raise SystemExit(f"{TEXT}: line {index + 1} has a non-CJK character: {line!r}")
+if len(lines) % LINES_PER_STANZA != 0:
+    raise SystemExit(f"{TEXT}: {len(lines)} lines is not a multiple of {LINES_PER_STANZA}")
+```
+
+Three rules, three reasons:
+
+- **Exactly three characters per line** — the app slices lines by fixed byte
+  offset for the flashcard grid. A four-character line would shift every grid
+  cell after it.
+- **Everything is an ideograph** — a stray punctuation mark or an invisible
+  character would be counted as a grid cell and rendered as a blank box.
+- **The line count is a multiple of four** — otherwise the last lesson is
+  truncated.
+
+Reporting the line number matters more than it looks. "3 characters expected"
+without a location means bisecting a 404-line file by hand.
+
+## Generated files must say they are generated
+
+Both outputs open with a banner, and the header repeats it:
+
+```c
+// Generated by tools/sanzijing/gen_content.py from tools/sanzijing/sanzijing.txt.
+// Do not edit by hand; run the generator instead.
+```
+
+`main/szj_text.c` is 410 lines of string literals that nobody will read. Without
+the banner it is a prime candidate for a "quick fix" that the next regeneration
+silently deletes.
+
+## A `--check` mode so CI can catch a stale file
+
+The generator supports `--check`, which compares what it *would* write against
+what is committed and fails if they differ, without writing anything:
+
+```bash
+python3 tools/sanzijing/gen_content.py --check
+```
+
+This is what turns "remember to regenerate" into a rule. Without it, editing the
+text file and forgetting the generator produces a build that compiles fine and
+ships the old text — the worst kind of failure, because everything looks healthy.
+
+## Chain the generators, in the right order
+
+The two generators are linked by design. The font generator builds its glyph
+inventory from the same text file, so the chain is:
+
+```text
+sanzijing.txt
+   ├─ gen_content.py  ->  main/szj_text.{c,h}      (the data)
+   └─ gen_font.py     ->  assets/fonts/szj_font_*.c (the glyphs)
+```
+
+Adding one line to the text file can therefore require regenerating the font
+subsets too. That is a feature: the inventory is the union of the text and the UI
+strings, so a new character is picked up automatically instead of rendering as a
+blank box on one lesson. Run both, then run the gate.
+
+## Keep the invariants tested where they can fail fast
+
+The generator validates the text at generation time. The host tests re-check the
+*generated data* so a stale commit is caught even if nobody runs the generator:
+
+```c
+assert(SZJ_LINE_COUNT % SZJ_LINES_PER_STANZA == 0);
+assert(SZJ_STANZA_COUNT * SZJ_LINES_PER_STANZA == SZJ_LINE_COUNT);
+for (int i = 0; i + 1 < SZJ_LINE_COUNT; i++) {
+    assert(strcmp(szj_line(i), szj_line(i + 1)) != 0);
+}
+for (int i = 0; i < SZJ_LINE_COUNT; i++) {
+    assert(strlen(szj_line(i)) == 9);
+}
+```
+
+The last two are about the *content*, not the format. A sentence repeated twice in
+a row would give a quiz question two correct answers; a line of the wrong length
+would break the flashcard grid. Both are checks on the data, both run in
+milliseconds, and neither is discoverable by reading the code.
+
+## Workflow after any text change
+
+```bash
+# 1. Edit tools/sanzijing/sanzijing.txt (one three-character line per sentence)
+python3 tools/sanzijing/gen_content.py          # regenerate the C tables
+python3 tools/sanzijing/gen_font.py             # regenerate the glyph subsets
+python3 tools/sanzijing/gen_content.py --check  # confirm nothing is stale
+python3 tools/sanzijing/gen_font.py --check
+./tools/validate.sh --static                    # data invariants, host tests
+```
+
+## Check list
+
+- One curated file is the single source of truth for the text.
+- The file format's unit matches the domain's unit, with no syntax to escape.
+- The generator derives every count from the data instead of hard-coding it.
+- Shape rules are validated at generation time, with the offending line number.
+- Generated files carry a "do not edit by hand" banner naming the generator.
+- A `--check` mode exists so CI can catch a stale output.
+- Chained generators that read the same source are regenerated together.
+- Data invariants are asserted in host tests, not only in the generator.
+
+## Related documents
+
+- [San Zi Jing kids game](sanzijing-kids-game/README.md) — the application this
+  text drives.
+- [Cutting a CJK font subset for LVGL](cjk-font-subsetting-for-lvgl.md) — the
+  second consumer of the same text file.
+- [Keeping application logic on the host](host-testable-app-logic.md) — where the
+  data invariants are asserted.
+- `tools/sanzijing/gen_content.py`, `tools/sanzijing/gen_font.py`, and
+  `tools/sanzijing/sanzijing.txt` — the pipeline itself.
