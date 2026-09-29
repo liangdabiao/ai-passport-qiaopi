@@ -1,30 +1,29 @@
 #!/usr/bin/env python3
-"""Generate the application's Chinese LVGL font subsets.
+"""生成本应用的中文 LVGL 字库子集。
 
-The glyph inventory is derived from the sources, never hand-maintained:
+字符清单是**推导出来的，从不手工维护**，来源有三处：
 
-  * every character of the chapter sources under ``tools/daodejing/chapters/``
-    (through ``content.content_characters()`` -- the same module that feeds
-    ``gen_content.py``, so the tables and the font can never disagree)
-  * every non-ASCII character inside a string literal of ``main/*.c|*.h``
-    (comments are stripped first, so Chinese comments cost no flash)
-  * printable ASCII and the punctuation the UI itself draws
+  * 题库源文件里的每一个字（通过 ``content.content_characters()`` —— 与
+    ``gen_content.py`` 用的是同一个模块，所以 C 表与字库不可能各说各话）
+  * ``main/*.c|*.h`` 的字符串字面量里的每一个非 ASCII 字符
+    （先剥掉注释，所以中文注释不占 Flash）
+  * 可打印 ASCII 与界面自己绘制的标点
 
-Every code point is verified against the source font before conversion, so a
-missing glyph becomes a build-time error instead of a blank box on the device.
+每个码点在转换前都会对着母字体核对一次，所以「漏字」是构建期错误，而不是设备上
+的一个空白框。
 
-Requirements: ``lv_font_conv`` (npm, pinned version below) and ``fonttools``.
-Source font: Noto Sans CJK SC Regular (SIL Open Font License 1.1).
+依赖：``lv_font_conv``（npm，下面锁了版本）与 ``fonttools``。
+母字体：Noto Sans CJK SC Regular（SIL Open Font License 1.1）。
 
-Usage (from the repository root):
-    python3 tools/daodejing/gen_font.py            # generate all sizes
-    python3 tools/daodejing/gen_font.py --check    # verify inventory + source font
-    python3 tools/daodejing/gen_font.py --download # fetch the source font first
+用法（在仓库根目录）：
+    python3 tools/qiaopi/gen_font.py            # 生成三档字库
+    python3 tools/qiaopi/gen_font.py --check    # 只核对清单与母字体覆盖，不转换
+    python3 tools/qiaopi/gen_font.py --download # 先下载母字体
 
-Environment overrides:
-    DDJ_SOURCE_FONT   path to the source OTF
-    LV_FONT_CONV      path to the lv_font_conv entry script
-    NODE_EXE          node executable to run the converter with
+环境变量覆盖：
+    QPQ_SOURCE_FONT   母字体 OTF 路径
+    LV_FONT_CONV      lv_font_conv 入口脚本路径
+    NODE_EXE          用来运行转换器的 node 可执行文件
 """
 from __future__ import annotations
 
@@ -39,15 +38,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import content  # noqa: E402  (path set up above)
+import content  # noqa: E402  （上面的 sys.path 已经指到同目录）
 
 ROOT = Path(__file__).resolve().parents[2]
 MAIN = ROOT / "main"
 FONT_DIR = ROOT / "assets" / "fonts"
 CHARSET = FONT_DIR / "charset.txt"
 
-# 生成的 C 表与它的头文件已经由章节源覆盖，扫它们只会重复劳动。
-SKIP_SOURCES = {"ddj_text.c", "ddj_text.h"}
+# 生成物：题库 C 表已经由题库源覆盖，扫它只会重复劳动；音频头文件同理
+# （它里面只有宏，没有中文）。
+SKIP_SOURCES = {"qpq_text.c", "qpq_text.h", "qpq_audio.h"}
 
 SOURCE_FONT_NAME = "NotoSansCJKsc-Regular.otf"
 SOURCE_FONT_URL = (
@@ -60,22 +60,20 @@ SOURCE_FONT_LICENSE = "SIL Open Font License 1.1"
 DEFAULT_SOURCE_FONT = Path("D:/esp/fontsrc") / SOURCE_FONT_NAME
 LV_FONT_CONV_VERSION = "1.5.3"
 
-# Generated font sizes. 16 = captions and the 参究 question, 24 = body and
-# options, 32 = the 经文 itself. These three numbers also appear in
-# main/ddj_ui.h as the per-line character budgets -- changing a size here
-# without changing the budgets there breaks the layout arithmetic.
+# 三档字号。16 = 顶栏、出处、结算数据与评语；24 = 句子、候选、解析、完整原文；
+# 32 = 标题页主标题与结算评级。这三个数字同时出现在 main/qpq_ui.h 的每行字数
+# 预算里 —— 只改这里不改那里，版式算术就断了。
 SIZES = (16, 24, 32)
 BPP = 4
 
-# Printable ASCII plus the symbols the UI draws itself. The CJK punctuation is
-# already picked up from the chapter text, but keeping it here means a chapter
-# edit that drops a punctuation mark cannot silently shrink the font.
+# 可打印 ASCII，加上界面自己绘制的符号。中文标点本来会从题库文本里收到，
+# 但这里再列一遍：题库改动若恰好删掉某个标点，字库不会因此悄悄缩水。
 BASE_RANGES = ((0x20, 0x7E),)
-EXTRA_SYMBOLS = "·，。！？、：；（）「」《》…—"
+EXTRA_SYMBOLS = "·，。！？、：；（）「」《》…—＿"
 
 
 def strip_comments(text: str) -> str:
-    """Remove // and /* */ comments while keeping string literals intact."""
+    """去掉 // 与 /* */ 注释，同时保持字符串字面量原样。"""
     out: list[str] = []
     i = 0
     n = len(text)
@@ -128,7 +126,7 @@ STRING_LITERAL_RE = re.compile(r'"((?:[^"\\]|\\.)*)"')
 
 
 def source_characters() -> set[str]:
-    """Non-ASCII characters used inside string literals of the application."""
+    """应用字符串字面量里用到的非 ASCII 字符。"""
     chars: set[str] = set()
     for path in sorted(list(MAIN.glob("*.c")) + list(MAIN.glob("*.h"))):
         if path.name in SKIP_SOURCES:
@@ -142,9 +140,9 @@ def source_characters() -> set[str]:
 def build_inventory() -> list[str]:
     chars: set[str] = set()
     try:
-        chars.update(content.content_characters())
+        chars.update(content.content_characters(content.load_bank()))
     except content.ContentError as error:
-        raise SystemExit(f"content error: {error}")
+        raise SystemExit(f"题库源文件错误：{error}")
     chars.update(source_characters())
     for start, end in BASE_RANGES:
         chars.update(chr(c) for c in range(start, end + 1))
@@ -170,15 +168,15 @@ def describe(chars: list[str]) -> str:
     cjk = [c for c in chars if 0x4E00 <= ord(c) <= 0x9FFF]
     others = [c for c in chars if not (0x4E00 <= ord(c) <= 0x9FFF)]
     lines = [
-        "# Glyph inventory for the 道德经日课 font subsets.",
-        "# Generated by tools/daodejing/gen_font.py -- do not edit by hand.",
-        f"# source font: {SOURCE_FONT_NAME} ({SOURCE_FONT_LICENSE})",
-        f"# total code points: {len(chars)}  (CJK {len(cjk)}, other {len(others)})",
+        "# 侨批 · 填字问答 的字符清单。",
+        "# 由 tools/qiaopi/gen_font.py 生成，请勿手改。",
+        f"# 母字体：{SOURCE_FONT_NAME}（{SOURCE_FONT_LICENSE}）",
+        f"# 码点总数：{len(chars)}（汉字 {len(cjk)}，其它 {len(others)}）",
         "",
-        "# --- CJK ideographs ---",
+        "# --- 汉字 ---",
         "".join(cjk),
         "",
-        "# --- everything else ---",
+        "# --- 其它（ASCII、中文标点、空格位用的全角下划线）---",
         "".join(others),
         "",
     ]
@@ -187,27 +185,25 @@ def describe(chars: list[str]) -> str:
 
 def download_source_font(target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
-    print(f"downloading {SOURCE_FONT_URL}")
+    print(f"下载 {SOURCE_FONT_URL}")
     with urllib.request.urlopen(SOURCE_FONT_URL, timeout=180) as response:
         data = response.read()
     digest = hashlib.sha256(data).hexdigest()
     if digest != SOURCE_FONT_SHA256:
-        raise SystemExit(
-            f"source font hash mismatch: got {digest}, expected {SOURCE_FONT_SHA256}"
-        )
+        raise SystemExit(f"母字体哈希不符：得到 {digest}，期望 {SOURCE_FONT_SHA256}")
     target.write_bytes(data)
-    print(f"wrote {target.relative_to(ROOT)} ({len(data)} bytes)")
+    print(f"wrote {target.relative_to(ROOT)}（{len(data)} 字节）")
 
 
 def resolve_source_font(explicit: str | None, download: bool) -> Path:
-    path = Path(explicit or os.environ.get("DDJ_SOURCE_FONT") or DEFAULT_SOURCE_FONT)
+    path = Path(explicit or os.environ.get("QPQ_SOURCE_FONT") or DEFAULT_SOURCE_FONT)
     if download or not path.is_file():
         if not download:
             raise SystemExit(
-                f"source font not found: {path}\n"
-                f"Run with --download, or pass --font <path>, or set DDJ_SOURCE_FONT.\n"
-                f"Expected SHA-256: {SOURCE_FONT_SHA256}\n"
-                f"Expected licence: {SOURCE_FONT_LICENSE}"
+                f"找不到母字体：{path}\n"
+                f"用 --download 下载，或用 --font <path>，或设 QPQ_SOURCE_FONT。\n"
+                f"期望 SHA-256：{SOURCE_FONT_SHA256}\n"
+                f"期望许可：{SOURCE_FONT_LICENSE}"
             )
         download_source_font(path)
     return path
@@ -226,9 +222,9 @@ def resolve_converter() -> list[str]:
         if candidate.is_file():
             return [node, str(candidate)]
     raise SystemExit(
-        "lv_font_conv not found. Install it with:\n"
+        "找不到 lv_font_conv。安装方式：\n"
         f"  npm install lv_font_conv@{LV_FONT_CONV_VERSION}\n"
-        "then pass its path through the LV_FONT_CONV environment variable."
+        "然后用 LV_FONT_CONV 环境变量把它的路径传进来。"
     )
 
 
@@ -242,30 +238,30 @@ def run_converter(command: list[str], source_font: Path, symbols: str, size: int
         "--format", "lvgl",
         "--no-compress",
         "--lv-include", "lvgl.h",
-        "--lv-font-name", f"ddj_font_{size}",
+        "--lv-font-name", f"qpq_font_{size}",
         "-o", str(output),
     ]
     result = subprocess.run(args, capture_output=True, text=True)
     if result.returncode != 0:
         print(result.stdout[-4000:], file=sys.stderr)
         print(result.stderr[-4000:], file=sys.stderr)
-        raise SystemExit(f"lv_font_conv failed for size {size}")
+        raise SystemExit(f"lv_font_conv 在字号 {size} 上失败")
     if result.stdout.strip():
         print(result.stdout.strip())
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--font", help="path to the source OTF")
-    parser.add_argument("--download", action="store_true",
-                        help="download the source font first")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--font", help="母字体 OTF 路径")
+    parser.add_argument("--download", action="store_true", help="先下载母字体")
     parser.add_argument("--check", action="store_true",
-                        help="verify the inventory and the source font, do not convert")
+                        help="只核对清单与母字体覆盖，不转换")
     args = parser.parse_args()
 
     chars = build_inventory()
     symbols = "".join(chars)
-    print(f"glyph inventory: {len(chars)} code points")
+    print(f"字符清单：{len(chars)} 个码点")
 
     FONT_DIR.mkdir(parents=True, exist_ok=True)
     content_text = describe(chars)
@@ -283,19 +279,19 @@ def main() -> int:
     if missing:
         preview = "".join(missing[:40])
         raise SystemExit(
-            f"{len(missing)} code point(s) absent from {source_font.name}: {preview}\n"
-            "A chapter edit or a UI string uses a glyph the source font does not provide."
+            f"{len(missing)} 个码点在 {source_font.name} 里没有：{preview}\n"
+            "要么是题库改动引入了母字体不提供的字，要么是某条界面文案用了生僻字。"
         )
-    print(f"coverage: {len(chars)}/{len(chars)} code points present in {source_font.name}")
+    print(f"覆盖：{len(chars)}/{len(chars)} 个码点都在 {source_font.name} 里")
 
     if args.check:
         return 0
 
     command = resolve_converter()
     for size in SIZES:
-        output = FONT_DIR / f"ddj_font_{size}.c"
+        output = FONT_DIR / f"qpq_font_{size}.c"
         run_converter(command, source_font, symbols, size, output)
-        print(f"wrote: {output.relative_to(ROOT)} ({output.stat().st_size} bytes)")
+        print(f"wrote: {output.relative_to(ROOT)}（{output.stat().st_size} 字节）")
     return 0
 
 

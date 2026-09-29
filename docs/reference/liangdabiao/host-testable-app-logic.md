@@ -4,7 +4,7 @@
 
 # Keeping Application Logic on the Host
 
-Written for the [Dao De Jing daily reading app](daodejing-daily/README.md), whose
+Written for the [Qiaopi Quiz app](qiaopi-quiz/README.md), whose
 application code is about 2,300 lines — five pages, a four-layer reading flow, a
 versioned save format, and a hand-written CJK line breaker. Roughly 610 lines of
 that logic, plus a 44-line generated content table, runs and is tested on a PC
@@ -30,13 +30,13 @@ on:
 
 ```bash
 cc -std=c11 -Wall -Wextra -Werror -I main \
-   tests/test_ddj_wrap.c main/ddj_wrap.c main/ddj_chapter.c main/ddj_text.c \
-   -o test_ddj_wrap && ./test_ddj_wrap
+   tests/test_qpq_wrap.c main/qpq_wrap.c main/qpq_chapter.c main/qpq_text.c \
+   -o test_qpq_wrap && ./test_qpq_wrap
 ```
 
 Two details in that command are deliberate. `-Werror` makes the host build a
-harsher compiler than the firmware build. And the test links `ddj_chapter` and
-`ddj_text` as well, so it asserts on **the content that will actually be on the
+harsher compiler than the firmware build. And the test links `qpq_chapter` and
+`qpq_text` as well, so it asserts on **the content that will actually be on the
 screen** rather than on a sample copied into the test file — a chapter edit is
 noticed immediately instead of at the next firmware build.
 
@@ -51,9 +51,9 @@ directly rather than only checking the return value.
 /* screen_1 is the chapter's first reading screen: 8 characters, 24 bytes of
    UTF-8. Wrapped at 6 characters per line it becomes two lines, so the output is
    25 bytes -- the text plus one inserted break. */
-assert(ddj_wrap_utf8(screen_1, 6, out, 25) == 0);
+assert(qpq_wrap_utf8(screen_1, 6, out, 25) == 0);
 assert(out[0] == '\0');    /* 25 bytes of output needs 26 with the terminator */
-assert(ddj_wrap_utf8(screen_1, 6, out, 26) == 25);
+assert(qpq_wrap_utf8(screen_1, 6, out, 26) == 25);
 ```
 
 Note what the boundary is measured on: the wrapped **output**, not the input. The
@@ -69,11 +69,11 @@ The same applies to invalid indices and null pointers, which are asserted
 explicitly instead of being left as "probably won't happen":
 
 ```c
-assert(ddj_chapter_at(-1) == NULL);
-assert(ddj_chapter_at(DDJ_CHAPTER_COUNT) == NULL);
-assert(ddj_chapter_passage(NULL, 0) == NULL);
-assert(ddj_progress_read_count(NULL) == 0);
-assert(ddj_progress_pending_at(NULL, 5, 0) == -1);
+assert(qpq_chapter_at(-1) == NULL);
+assert(qpq_chapter_at(QPQ_CHAPTER_COUNT) == NULL);
+assert(qpq_chapter_passage(NULL, 0) == NULL);
+assert(qpq_progress_read_count(NULL) == 0);
+assert(qpq_progress_pending_at(NULL, 5, 0) == -1);
 ```
 
 It is tempting to skip these. A `NULL` check that is asserted in a host test is
@@ -81,7 +81,7 @@ one you know exists; one that is only reasoned about is one that will be missing
 from the path that actually gets hit.
 
 One boundary needs a weaker promise, and it is worth stating rather than hiding:
-a zero-capacity buffer cannot be written to at all, so `ddj_chapter_label` only
+a zero-capacity buffer cannot be written to at all, so `qpq_chapter_label` only
 guarantees its return value there, not a cleared string. The header says so
 explicitly, and the test asserts only the return value. A contract that promises
 more than it can deliver is worse than one that admits the gap — the test written
@@ -97,7 +97,7 @@ Each of these loops runs in well under a millisecond:
 - All **six passages, five commentary points, and three answers** of the curated
   chapter, wrapped and checked against the per-line budget, the line-count ceiling,
   and the punctuation rule.
-- All **81 chapters** in the re-reading queue queries, at every prefix length from
+- All **91 questions** in the re-reading queue queries, at every prefix length from
   `0` to `chapter_count`.
 - The **round trip** of the save blob, plus nine separate corruptions of it.
 - The **key sequence space** of the session state machine: move at the top and the
@@ -116,15 +116,15 @@ Two classes of assertion caught problems that no amount of reading would have:
 **Structural invariants of the generated data.**
 
 ```c
-for (int index = 0; index < DDJ_CHAPTER_COUNT; index++) {
-    const ddj_chapter_t *chapter = ddj_chapter_at(index);
+for (int index = 0; index < QPQ_CHAPTER_COUNT; index++) {
+    const qpq_chapter_t *chapter = qpq_chapter_at(index);
     assert(chapter->number == index + 1);
     assert(chapter->point_count >= 3 && chapter->point_count <= 5);
-    assert(chapter->option_first == (uint16_t)(index * DDJ_PONDER_OPTION_COUNT));
+    assert(chapter->option_first == (uint16_t)(index * QPQ_PONDER_OPTION_COUNT));
 }
-assert(passage_sum == DDJ_PASSAGE_COUNT);
-assert(point_sum == DDJ_POINT_COUNT);
-assert(DDJ_OPTION_COUNT == DDJ_CHAPTER_COUNT * DDJ_PONDER_OPTION_COUNT);
+assert(passage_sum == QPQ_PASSAGE_COUNT);
+assert(point_sum == QPQ_POINT_COUNT);
+assert(QPQ_OPTION_COUNT == QPQ_CHAPTER_COUNT * QPQ_PONDER_OPTION_COUNT);
 ```
 
 The `option_first` assertion is the one that matters. Each chapter's three
@@ -136,10 +136,10 @@ answers — a data bug that reading the code cannot reveal.
 **Self-consistency of derived constants.**
 
 ```c
-assert(DDJ_NOTES_BYTES == 81);
-assert(DDJ_BITMAP_BYTES == 11);          /* (81 + 7) / 8 */
-assert(DDJ_PROGRESS_BLOB_SIZE == 4 + 81 + 11 + 11 + 1);
-assert(DDJ_PROGRESS_BLOB_SIZE == 108);
+assert(QPQ_NOTES_BYTES == 81);
+assert(QPQ_BITMAP_BYTES == 11);          /* (81 + 7) / 8 */
+assert(QPQ_PROGRESS_BLOB_SIZE == 4 + 81 + 11 + 11 + 1);
+assert(QPQ_PROGRESS_BLOB_SIZE == 108);
 ```
 
 These are the constants that decide how many bytes go into the save blob. Get one
@@ -152,10 +152,10 @@ Serialization deserves more than a happy-path test, because the data crosses a
 power failure and a flash controller:
 
 ```c
-assert(ddj_progress_deserialize(&back, blob, size));       // round trip
-assert(ddj_progress_slot(&back, 0) == DDJ_SLOT_CHEWING);
-assert(ddj_progress_slot(&back, 80) == DDJ_SLOT_MISSED);
-assert(ddj_progress_read_count(&back) == 2);
+assert(qpq_progress_deserialize(&back, blob, size));       // round trip
+assert(qpq_progress_slot(&back, 0) == QPQ_SLOT_CHEWING);
+assert(qpq_progress_slot(&back, 80) == QPQ_SLOT_MISSED);
+assert(qpq_progress_read_count(&back) == 2);
 ```
 
 Corrupt the magic, the version, the length, and the checksum, one at a time, and
@@ -176,7 +176,7 @@ sets a sentinel first:
 
 ```c
 untouched.sessions = 777;
-assert(!ddj_progress_deserialize(&untouched, bad, sizeof(bad)));
+assert(!qpq_progress_deserialize(&untouched, bad, sizeof(bad)));
 assert(untouched.sessions == 777);   // a rejected load must not half-apply
 ```
 
@@ -190,12 +190,12 @@ rules go where they can be tested. The re-reading queue is the clearest example,
 because its whole value is that it agrees with what the reader recorded:
 
 ```c
-ddj_progress_set_slot(&pending, 0, DDJ_SLOT_LANDED);
-ddj_progress_set_slot(&pending, 1, DDJ_SLOT_CHEWING);
-ddj_progress_set_slot(&pending, 2, DDJ_SLOT_MISSED);
-assert(ddj_progress_pending_count(&pending, 3) == 2);   // "landed" is not pending
-assert(ddj_progress_pending_count(&pending, 1) == 0);   // chapter 1 is neither
-assert(ddj_progress_pending_count(&pending, 2) == 1);
+qpq_progress_set_slot(&pending, 0, QPQ_SLOT_LANDED);
+qpq_progress_set_slot(&pending, 1, QPQ_SLOT_CHEWING);
+qpq_progress_set_slot(&pending, 2, QPQ_SLOT_MISSED);
+assert(qpq_progress_pending_count(&pending, 3) == 2);   // "landed" is not pending
+assert(qpq_progress_pending_count(&pending, 1) == 0);   // chapter 1 is neither
+assert(qpq_progress_pending_count(&pending, 2) == 1);
 ```
 
 Two rules fall out of those three lines, and both are ones a reader would notice:
@@ -257,12 +257,12 @@ copy's behaviour and told me nothing about the app.
 
 ## Related documents
 
-- [Dao De Jing daily reading app](daodejing-daily/README.md) — the modules and
+- [Qiaopi Quiz app](qiaopi-quiz/README.md) — the modules and
   tests referenced here.
 - [Building ESP-IDF firmware from Git Bash on Windows](windows-git-bash-esp-idf.md) —
   how to get a host compiler and why the repository's stub-based demo tests
   behave differently from these.
-- [Curating chapter content into generated C](chapter-content-pipeline.md) — the
+- [Curating chapter content into generated C](question-bank-pipeline.md) — the
   generator whose output these tests re-check.
 - `docs/development/engineering/build-and-test.md` — the shared validation gate.
 - `tools/validate.sh` — where each test's source list is spelled out.

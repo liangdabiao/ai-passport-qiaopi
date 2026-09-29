@@ -4,7 +4,7 @@
 
 # Letting Font Metrics Drive the Layout
 
-Also written while building the [Dao De Jing daily reading app](daodejing-daily/README.md).
+Also written while building the [Qiaopi Quiz app](qiaopi-quiz/README.md).
 Every layout bug in that application came from one habit: choosing round numbers
 for row heights and writing UI copy first, then discovering the font disagreed.
 This entry is the arithmetic that replaced the guessing, and the defects it
@@ -24,9 +24,9 @@ used here, LVGL reports:
 
 | Font | `line_height` |
 | --- | --- |
-| `ddj_font_16` | 20 px |
-| `ddj_font_24` | 29 px |
-| `ddj_font_32` | 38 px |
+| `qpq_font_16` | 20 px |
+| `qpq_font_24` | 29 px |
+| `qpq_font_32` | 38 px |
 
 Note that `line_height` is noticeably larger than the nominal size: the 24 px
 font needs 29 px, the 32 px font needs 38. This is the trap. A 40 px row with a
@@ -45,7 +45,7 @@ Where that landed here:
 
 | Row | Font | Height | Border | Usable | `line_height` |
 | --- | --- | --- | --- | --- | --- |
-| List row (`DDJ_ROW_H`) | 24 px | 44 | 3 | 38 | 29 |
+| List row (`QPQ_ROW_H`) | 24 px | 44 | 3 | 38 | 29 |
 | Home menu row | 24 px | 44 | 3 | 38 | 29 |
 | Settings row | 24 px | 44 | 3 | 38 | 29 |
 
@@ -64,10 +64,10 @@ column starts 10 px in and is 210 px wide:
 
 ```text
 Page card  230 x 310, inset 5, radius 25
-  top bar     0 .. 36      (DDJ_BAR_H)
-  body       36 .. 284     (DDJ_BODY_H = 248)
-  hint bar  284 .. 310     (DDJ_HINT_H = 26)
-  content x  10 .. 220     (DDJ_BODY_W = 210)
+  top bar     0 .. 36      (QPQ_BAR_H)
+  body       36 .. 284     (QPQ_BODY_H = 248)
+  hint bar  284 .. 310     (QPQ_HINT_H = 26)
+  content x  10 .. 220     (QPQ_BODY_W = 210)
 
 Home
   caption    38 ..  58
@@ -105,25 +105,25 @@ exactly equal to the font size (proven in the font-subsetting entry), "how many
 characters fit on one line" is a division, and it is written as one:
 
 ```c
-#define DDJ_CHARS_PASSAGE (DDJ_BODY_W / 32)   // 6
-#define DDJ_CHARS_PARA    (DDJ_BODY_W / 24)   // 8
-#define DDJ_CHARS_NOTE    (DDJ_BODY_W / 16)   // 13
+#define QPQ_CHARS_PASSAGE (QPQ_BODY_W / 32)   // 6
+#define QPQ_CHARS_PARA    (QPQ_BODY_W / 24)   // 8
+#define QPQ_CHARS_NOTE    (QPQ_BODY_W / 16)   // 13
 ```
 
-Writing it as a division rather than as `#define DDJ_CHARS_PASSAGE 6` means the
+Writing it as a division rather than as `#define QPQ_CHARS_PASSAGE 6` means the
 number changes automatically if the body width does — and, more usefully, it can
 be asserted at compile time:
 
 ```c
-_Static_assert(DDJ_CHARS_PASSAGE * 32 <= DDJ_BODY_W, "passage line budget no longer fits");
-_Static_assert(DDJ_CHARS_PARA    * 24 <= DDJ_BODY_W, "commentary line budget no longer fits");
-_Static_assert(DDJ_CHARS_NOTE    * 16 <= DDJ_BODY_W, "hint line budget no longer fits");
+_Static_assert(QPQ_CHARS_PASSAGE * 32 <= QPQ_BODY_W, "passage line budget no longer fits");
+_Static_assert(QPQ_CHARS_PARA    * 24 <= QPQ_BODY_W, "commentary line budget no longer fits");
+_Static_assert(QPQ_CHARS_NOTE    * 16 <= QPQ_BODY_W, "hint line budget no longer fits");
 ```
 
 Three numbers of that kind should exist. The same budget is also declared on the
-generation side, in `tools/daodejing/content.py`, where it rejects a chapter whose
+generation side, in `tools/qiaopi/content.py`, where it rejects a chapter whose
 text is too long to fit. The two must agree; if only one exists, chapters pass
-generation and then overflow on the panel. Beyond that, `tests/test_ddj_wrap.c`
+generation and then overflow on the panel. Beyond that, `tests/test_qpq_wrap.c`
 links the real content and asserts that no wrapped line exceeds the per-line
 figure — so the budget is checked at generation time, at compile time, and in a
 host test.
@@ -159,7 +159,7 @@ six ideographs, or 144 px — which is 44 px too wide, so both halves would have
 been ellipsized and the reader would have seen a number with no title. The
 chapter number therefore moved into the right-hand note, which is 16 px text in
 an 88 px slot (5 characters) and renders the number with room to spare. The
-comment at the top of `main/ddj_catalog.c` records that arithmetic, so the next
+comment at the top of `main/qpq_catalog.c` records that arithmetic, so the next
 person does not re-derive it or undo it.
 
 Chinese text is unusually predictable: four characters of the 24 px subset are
@@ -226,11 +226,11 @@ have to hold both units at once, and both are handled by *naming* the units
 rather than by being careful:
 
 ```c
-#define DDJ_PASSAGE_MAX_CHARS 24   /* characters -- a layout limit */
-#define DDJ_POINT_MAX_CHARS   48   /* characters -- a layout limit */
+#define QPQ_PASSAGE_MAX_CHARS 24   /* characters -- a layout limit */
+#define QPQ_POINT_MAX_CHARS   48   /* characters -- a layout limit */
 
 /* bytes -- the buffer must hold the largest of the two, in UTF-8 */
-#define DDJ_WRAP_CAPACITY 176
+#define QPQ_WRAP_CAPACITY 176
 ```
 
 The wrap buffer is the instructive one. Wrapped text is written into a single
@@ -245,7 +245,7 @@ caller**, which is the commentary (48 characters), not the passage (24):
 + terminator                  = 150 bytes
 ```
 
-`DDJ_WRAP_CAPACITY` is 176, leaving 26 bytes of margin. Sizing it from the
+`QPQ_WRAP_CAPACITY` is 176, leaving 26 bytes of margin. Sizing it from the
 passage (24 characters, 4 lines, 76 bytes) would have looked sufficient and
 overflowed the first time a six-line commentary point was wrapped. The derivation
 is written next to the constant, in characters and bytes, so the next person can
@@ -261,7 +261,7 @@ arithmetic does not close is worse than no comment.
 The same distinction is why the save-format constants are stated as byte counts
 with the arithmetic spelled out — `4 header bytes + 81 chapter slots + 2 x 11
 wrong-answer bytes + 1 checksum byte = 108` — and asserted against
-`DDJ_PROGRESS_BLOB_SIZE` in a host test. A slot count and a byte count are
+`QPQ_PROGRESS_BLOB_SIZE` in a host test. A slot count and a byte count are
 different things; naming them differently in the source is what stops the mix-up.
 
 ## Check list
@@ -283,12 +283,12 @@ different things; naming them differently in the source is what stops the mix-up
 
 ## Related documents
 
-- [Dao De Jing daily reading app](daodejing-daily/README.md) — the pages these
+- [Qiaopi Quiz app](qiaopi-quiz/README.md) — the pages these
   constants govern.
 - [Cutting a CJK font subset for LVGL](cjk-font-subsetting-for-lvgl.md) — where
   the font sizes and their line heights come from.
-- `main/ddj_ui.c` — the shared page, row, and list widgets and their padding.
-- `main/ddj_ui.h` — the layout constants and the per-line budgets, with the
+- `main/qpq_ui.c` — the shared page, row, and list widgets and their padding.
+- `main/qpq_ui.h` — the layout constants and the per-line budgets, with the
   compile-time assertions in the `.c`.
-- `main/ddj_daily.c`, `main/ddj_home.c`, `main/ddj_catalog.c` — the pages whose
+- `main/qpq_daily.c`, `main/qpq_home.c`, `main/qpq_catalog.c` — the pages whose
   constants carry the vertical budget.

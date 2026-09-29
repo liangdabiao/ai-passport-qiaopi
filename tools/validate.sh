@@ -13,15 +13,19 @@ run_static_checks() {
     local test_dir
 
     python3 tools/check_repo.py
-    # 生成物与内容源必须同步：章源改了却忘了重新生成 C 表，在这里就失败。
-    PYTHONDONTWRITEBYTECODE=1 python3 tools/daodejing/gen_content.py --check
-    # 字库清单同理：新增界面文案或新增一章后忘了重跑字库生成器，charset.txt
+    # 生成物与内容源必须同步：题库改了却忘了重新生成 C 表，在这里就失败。
+    PYTHONDONTWRITEBYTECODE=1 python3 tools/qiaopi/gen_content.py --check
+    # 音频 blob 同理。--check 不重新编码，只核对 blob 的索引与 clips.txt 是否
+    # 自洽、以及源素材是否被动过（源素材不在本机时明确跳过 sha256 那一段，
+    # 不假装通过），所以 CI 上不需要 ffmpeg。
+    PYTHONDONTWRITEBYTECODE=1 python3 tools/qiaopi/gen_audio.py --check
+    # 字库清单同理：新增界面文案或新增一道题后忘了重跑字库生成器，charset.txt
     # 就会与源文件脱节。这一步要 fontTools 才能逐个码点核对母字体覆盖，而 CI
     # 镜像不装 fontTools —— 缺依赖时明确跳过并说明，不假装通过。
     if python3 -c "import fontTools" >/dev/null 2>&1; then
-        PYTHONDONTWRITEBYTECODE=1 python3 tools/daodejing/gen_font.py --check
+        PYTHONDONTWRITEBYTECODE=1 python3 tools/qiaopi/gen_font.py --check
     else
-        echo "skip: tools/daodejing/gen_font.py --check（当前 python3 无 fontTools；字库清单同步未校验）" >&2
+        echo "skip: tools/qiaopi/gen_font.py --check（当前 python3 无 fontTools；字库清单同步未校验）" >&2
     fi
 
     actionlint_bin="${ACTIONLINT_BIN:-}"
@@ -33,7 +37,7 @@ run_static_checks() {
     fi
     "${actionlint_bin}" -color .github/workflows/*.yml
 
-    test_dir="$(mktemp -d /tmp/daodejing-host-tests.XXXXXX)"
+    test_dir="$(mktemp -d /tmp/qiaopi-host-tests.XXXXXX)"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/test_ui_pixel_math.c main/ui_pixel_math.c \
         -o "${test_dir}/test_ui_pixel_math"
@@ -42,27 +46,46 @@ run_static_checks() {
         tests/test_demo_navigation.c main/demo_navigation.c \
         -o "${test_dir}/test_demo_navigation"
     "${test_dir}/test_demo_navigation"
-    # 道德经日课的纯逻辑层：内容访问、折行、进度模型、四层会话状态机。
-    # 它们刻意不依赖 ESP-IDF/LVGL，所以能在宿主机上直接跑。
+
+    # 本应用的纯逻辑层：ADPCM 解码、音频 blob 索引、题库访问、折行、答题状态机、
+    # 进度存档。它们刻意不依赖 ESP-IDF/LVGL，所以能在宿主机上直接跑。
     #
-    # test_ddj_wrap 刻意连了 ddj_chapter/ddj_text：它断言的是「真实经文在真实
-    # 每行字数预算下都不超行宽」，也就是「一屏放得下」这句话本身。
+    # test_qpq_adpcm 断言的是「C 解码器与 Python 参考实现逐位一致」—— 编码器与
+    # 解码器任一侧被改动都会被抓住。固定向量由 gen_audio.py 生成。
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
-        tests/test_ddj_chapter.c main/ddj_chapter.c main/ddj_text.c \
-        -o "${test_dir}/test_ddj_chapter"
-    "${test_dir}/test_ddj_chapter"
+        tests/test_qpq_adpcm.c main/qpq_adpcm.c \
+        -o "${test_dir}/test_qpq_adpcm"
+    "${test_dir}/test_qpq_adpcm"
+
+    # 这个还会打开真实的 assets/audio/qpq_audio.bin 核对片段数与总样本数
+    # （文件不在位时明确跳过那一段）。
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
-        tests/test_ddj_progress.c main/ddj_progress.c \
-        -o "${test_dir}/test_ddj_progress"
-    "${test_dir}/test_ddj_progress"
+        tests/test_qpq_audio_index.c main/qpq_audio_index.c main/qpq_adpcm.c \
+        -o "${test_dir}/test_qpq_audio_index"
+    "${test_dir}/test_qpq_audio_index"
+
+    # test_qpq_wrap 刻意连了 qpq_content/qpq_text：它断言的是「真实题库里那句话
+    # 在真实每行字数预算下都放得下」，也就是「一屏放得下」这句话本身。两种显示
+    # 形态（答题页的槽位、判卷页的已填空）都要过。
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
-        tests/test_ddj_session.c main/ddj_session.c main/ddj_chapter.c main/ddj_text.c \
-        -o "${test_dir}/test_ddj_session"
-    "${test_dir}/test_ddj_session"
+        tests/test_qpq_wrap.c main/qpq_wrap.c main/qpq_content.c main/qpq_text.c \
+        -o "${test_dir}/test_qpq_wrap"
+    "${test_dir}/test_qpq_wrap"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
-        tests/test_ddj_wrap.c main/ddj_wrap.c main/ddj_chapter.c main/ddj_text.c \
-        -o "${test_dir}/test_ddj_wrap"
-    "${test_dir}/test_ddj_wrap"
+        tests/test_qpq_content.c main/qpq_content.c main/qpq_wrap.c main/qpq_text.c \
+        -o "${test_dir}/test_qpq_content"
+    "${test_dir}/test_qpq_content"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_qpq_session.c main/qpq_session.c main/qpq_content.c \
+        main/qpq_wrap.c main/qpq_text.c \
+        -o "${test_dir}/test_qpq_session"
+    "${test_dir}/test_qpq_session"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_qpq_progress.c main/qpq_progress.c main/qpq_session.c \
+        main/qpq_content.c main/qpq_wrap.c main/qpq_text.c \
+        -o "${test_dir}/test_qpq_progress"
+    "${test_dir}/test_qpq_progress"
+
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Icomponents/bsp/src \
         tests/test_bsp_display_rounding.c components/bsp/src/bsp_display_rounding.c \
         -o "${test_dir}/test_bsp_display_rounding"
@@ -109,8 +132,8 @@ run_firmware_checks() (
         return 1
     fi
 
-    validation_build_dir="$(mktemp -d /tmp/daodejing-firmware.XXXXXX)"
-    trap 'case "${validation_build_dir}" in /tmp/daodejing-firmware.*) rm -rf -- "${validation_build_dir}" ;; esac' EXIT
+    validation_build_dir="$(mktemp -d /tmp/qiaopi-firmware.XXXXXX)"
+    trap 'case "${validation_build_dir}" in /tmp/qiaopi-firmware.*) rm -rf -- "${validation_build_dir}" ;; esac' EXIT
 
     SDKCONFIG_DEFAULTS="${repo_root}/sdkconfig.defaults" \
         idf.py -B "${validation_build_dir}" \

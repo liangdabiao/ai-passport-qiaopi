@@ -4,7 +4,7 @@
 
 # 把应用逻辑留在主机上
 
-为[道德经日课机](daodejing-daily/README.zh_CN.md)而写。这个应用代码约 2300 行——五个页面、一条四层日课流、一个带版本号的存档格式，再加一个手写的中文折行器。其中大约 610 行逻辑，外加 44 行生成的经文表，是在电脑上跑、在电脑上测的，**不接板子**；背后是 727 行主机测试。
+为[侨批填字问答](qiaopi-quiz/README.zh_CN.md)而写。这个应用代码约 2300 行——五个页面、一条四层日课流、一个带版本号的存档格式，再加一个手写的中文折行器。其中大约 610 行逻辑，外加 44 行生成的经文表，是在电脑上跑、在电脑上测的，**不接板子**；背后是 727 行主机测试。
 
 ## 让这一切成立的那条分界
 
@@ -21,11 +21,11 @@
 
 ```bash
 cc -std=c11 -Wall -Wextra -Werror -I main \
-   tests/test_ddj_wrap.c main/ddj_wrap.c main/ddj_chapter.c main/ddj_text.c \
-   -o test_ddj_wrap && ./test_ddj_wrap
+   tests/test_qpq_wrap.c main/qpq_wrap.c main/qpq_chapter.c main/qpq_text.c \
+   -o test_qpq_wrap && ./test_qpq_wrap
 ```
 
-这条命令里有两个细节是刻意的。`-Werror` 让主机编译比固件编译更苛刻。而测试同时连了 `ddj_chapter` 与 `ddj_text`，所以它断言的是**真正会出现在屏上的那批字**，而不是测试文件里另抄的一份样本——内容一改立刻知道，而不是等到下一次固件构建。
+这条命令里有两个细节是刻意的。`-Werror` 让主机编译比固件编译更苛刻。而测试同时连了 `qpq_chapter` 与 `qpq_text`，所以它断言的是**真正会出现在屏上的那批字**，而不是测试文件里另抄的一份样本——内容一改立刻知道，而不是等到下一次固件构建。
 
 ## 每个入口都要守住一个承诺
 
@@ -34,9 +34,9 @@ cc -std=c11 -Wall -Wextra -Werror -I main \
 ```c
 /* screen_1 是该章第一屏原文：8 个字，24 字节 UTF-8。按每行 6 字折成两行，
    于是输出是 25 字节 —— 正文加上一个插入的换行。 */
-assert(ddj_wrap_utf8(screen_1, 6, out, 25) == 0);
+assert(qpq_wrap_utf8(screen_1, 6, out, 25) == 0);
 assert(out[0] == '\0');    /* 25 字节输出，加结尾符需要 26 */
-assert(ddj_wrap_utf8(screen_1, 6, out, 26) == 25);
+assert(qpq_wrap_utf8(screen_1, 6, out, 26) == 25);
 ```
 
 注意这个边界量的是**折行后的输出**，不是输入。输入是 24 字节，函数插入的那个换行把它变成 25。照源文本去算这个边界会差一个字节，而测试会「通过」——用着一个在设备上会截断的缓冲区。
@@ -46,16 +46,16 @@ assert(ddj_wrap_utf8(screen_1, 6, out, 26) == 25);
 无效下标与空指针同理，都显式断言，而不是留一句「应该不会发生」：
 
 ```c
-assert(ddj_chapter_at(-1) == NULL);
-assert(ddj_chapter_at(DDJ_CHAPTER_COUNT) == NULL);
-assert(ddj_chapter_passage(NULL, 0) == NULL);
-assert(ddj_progress_read_count(NULL) == 0);
-assert(ddj_progress_pending_at(NULL, 5, 0) == -1);
+assert(qpq_chapter_at(-1) == NULL);
+assert(qpq_chapter_at(QPQ_CHAPTER_COUNT) == NULL);
+assert(qpq_chapter_passage(NULL, 0) == NULL);
+assert(qpq_progress_read_count(NULL) == 0);
+assert(qpq_progress_pending_at(NULL, 5, 0) == -1);
 ```
 
 这些很容易被跳过。在主机测试里被断言过的 `NULL` 检查，是你**知道存在**的检查；只在脑子里过了一遍的那个，会恰好从真正被走到的那条路径上缺席。
 
-有一个边界只能给出更弱的承诺，这件事值得写出来而不是藏起来：容量为 0 的缓冲区根本没法写，所以 `ddj_chapter_label` 在那里只保证返回值，不保证清空字符串。头文件明确写了这一点，测试也只断言返回值。一个承诺得比自己能做到的更多的契约，比承认缺口的契约更糟——照着那个过强的版本写的测试会失败，而失败看起来像代码 bug。
+有一个边界只能给出更弱的承诺，这件事值得写出来而不是藏起来：容量为 0 的缓冲区根本没法写，所以 `qpq_chapter_label` 在那里只保证返回值，不保证清空字符串。头文件明确写了这一点，测试也只断言返回值。一个承诺得比自己能做到的更多的契约，比承认缺口的契约更糟——照着那个过强的版本写的测试会失败，而失败看起来像代码 bug。
 
 ## 全都扫一遍，不抽样
 
@@ -63,7 +63,7 @@ assert(ddj_progress_pending_at(NULL, 5, 0) == -1);
 
 - 进度模型的全部 **81 个章位**：表态存取器在区间的两端和越界下标上都返回「未表态」。
 - 已收录那一章的**全部 6 屏原文、5 条点拨、3 个选项**，逐个折行，逐个核对每行字数上限、行数上限与禁则。
-- **81 章**在待参队列查询里的每一个前缀长度，从 `0` 到 `chapter_count`。
+- **91 题**在待参队列查询里的每一个前缀长度，从 `0` 到 `chapter_count`。
 - 存档 blob 的**往返**，外加对它的九种不同破坏。
 - 会话状态机的**按键序列空间**：每层的顶端与底端移动、下钻、回退，以及从每个阶段取消。
 
@@ -76,15 +76,15 @@ assert(ddj_progress_pending_at(NULL, 5, 0) == -1);
 **生成数据的结构不变量。**
 
 ```c
-for (int index = 0; index < DDJ_CHAPTER_COUNT; index++) {
-    const ddj_chapter_t *chapter = ddj_chapter_at(index);
+for (int index = 0; index < QPQ_CHAPTER_COUNT; index++) {
+    const qpq_chapter_t *chapter = qpq_chapter_at(index);
     assert(chapter->number == index + 1);
     assert(chapter->point_count >= 3 && chapter->point_count <= 5);
-    assert(chapter->option_first == (uint16_t)(index * DDJ_PONDER_OPTION_COUNT));
+    assert(chapter->option_first == (uint16_t)(index * QPQ_PONDER_OPTION_COUNT));
 }
-assert(passage_sum == DDJ_PASSAGE_COUNT);
-assert(point_sum == DDJ_POINT_COUNT);
-assert(DDJ_OPTION_COUNT == DDJ_CHAPTER_COUNT * DDJ_PONDER_OPTION_COUNT);
+assert(passage_sum == QPQ_PASSAGE_COUNT);
+assert(point_sum == QPQ_POINT_COUNT);
+assert(QPQ_OPTION_COUNT == QPQ_CHAPTER_COUNT * QPQ_PONDER_OPTION_COUNT);
 ```
 
 `option_first` 那条是关键。每章的三个选项存在一张共享表里，章记录只存一个偏移量。要是某章生成出来的偏移不是 3 的倍数，那一章的三个选项就会**悄悄变成另外三章的答案**——一个读代码绝对看不出来的数据 bug。
@@ -92,10 +92,10 @@ assert(DDJ_OPTION_COUNT == DDJ_CHAPTER_COUNT * DDJ_PONDER_OPTION_COUNT);
 **推导常量的自洽。**
 
 ```c
-assert(DDJ_NOTES_BYTES == 81);
-assert(DDJ_BITMAP_BYTES == 11);          /* (81 + 7) / 8 */
-assert(DDJ_PROGRESS_BLOB_SIZE == 4 + 81 + 11 + 11 + 1);
-assert(DDJ_PROGRESS_BLOB_SIZE == 108);
+assert(QPQ_NOTES_BYTES == 81);
+assert(QPQ_BITMAP_BYTES == 11);          /* (81 + 7) / 8 */
+assert(QPQ_PROGRESS_BLOB_SIZE == 4 + 81 + 11 + 11 + 1);
+assert(QPQ_PROGRESS_BLOB_SIZE == 108);
 ```
 
 这些常量决定存档 blob 有多少字节。写错一个，存档就短一个字节；校验和会在加载时抓到，但**只在设备上、只在断过一次电之后**。
@@ -105,10 +105,10 @@ assert(DDJ_PROGRESS_BLOB_SIZE == 108);
 序列化值得比「happy path」更多的测试，因为这些数据要穿过一次断电和一颗 Flash 控制器：
 
 ```c
-assert(ddj_progress_deserialize(&back, blob, size));       // 往返
-assert(ddj_progress_slot(&back, 0) == DDJ_SLOT_CHEWING);
-assert(ddj_progress_slot(&back, 80) == DDJ_SLOT_MISSED);
-assert(ddj_progress_read_count(&back) == 2);
+assert(qpq_progress_deserialize(&back, blob, size));       // 往返
+assert(qpq_progress_slot(&back, 0) == QPQ_SLOT_CHEWING);
+assert(qpq_progress_slot(&back, 80) == QPQ_SLOT_MISSED);
+assert(qpq_progress_read_count(&back) == 2);
 ```
 
 把 magic、版本、长度、校验和逐个改坏，每次都断言被拒。其中两种要单独点名，因为它们容易漏：
@@ -120,7 +120,7 @@ assert(ddj_progress_read_count(&back) == 2);
 
 ```c
 untouched.sessions = 777;
-assert(!ddj_progress_deserialize(&untouched, bad, sizeof(bad)));
+assert(!qpq_progress_deserialize(&untouched, bad, sizeof(bad)));
 assert(untouched.sessions == 777);   // 被拒的加载不许「应用一半」
 ```
 
@@ -131,12 +131,12 @@ assert(untouched.sessions == 777);   // 被拒的加载不许「应用一半」
 任何读者会当成「这应用怎么怪怪的」的东西都是规则，而规则要待在能被测的地方。待参队列是最好的例子，因为它的全部价值就在于**和读者记下的东西一致**：
 
 ```c
-ddj_progress_set_slot(&pending, 0, DDJ_SLOT_LANDED);
-ddj_progress_set_slot(&pending, 1, DDJ_SLOT_CHEWING);
-ddj_progress_set_slot(&pending, 2, DDJ_SLOT_MISSED);
-assert(ddj_progress_pending_count(&pending, 3) == 2);   // 「接了」不算待参
-assert(ddj_progress_pending_count(&pending, 1) == 0);   // 第 1 章两边都不算
-assert(ddj_progress_pending_count(&pending, 2) == 1);
+qpq_progress_set_slot(&pending, 0, QPQ_SLOT_LANDED);
+qpq_progress_set_slot(&pending, 1, QPQ_SLOT_CHEWING);
+qpq_progress_set_slot(&pending, 2, QPQ_SLOT_MISSED);
+assert(qpq_progress_pending_count(&pending, 3) == 2);   // 「接了」不算待参
+assert(qpq_progress_pending_count(&pending, 1) == 0);   // 第 1 章两边都不算
+assert(qpq_progress_pending_count(&pending, 2) == 1);
 ```
 
 三行里掉出两条规则，而且都是读者会注意到的：他说过「接了」的章，不该再回来要求他重读；还没收录的章，压根不该出现。队列是存档状态的**纯函数——是推导出来的，从不另存**，这正是队列与已记表态不可能不一致的原因。要是队列也当成第二份存档数据，那「两边都要更新」就成了一条规则，而存档路径上的规则恰恰是会在设备上崩掉的那些。
@@ -167,8 +167,8 @@ assert(ddj_progress_pending_count(&pending, 2) == 1);
 
 ## 相关文档
 
-- [道德经日课机](daodejing-daily/README.zh_CN.md) —— 这里提到的模块与测试。
+- [侨批填字问答](qiaopi-quiz/README.zh_CN.md) —— 这里提到的模块与测试。
 - [在 Windows 的 Git Bash 里构建 ESP-IDF 固件](windows-git-bash-esp-idf.zh_CN.md) —— 怎么弄到宿主编译器，以及仓库那套基于桩的 demo 测试为何与这些不一样。
-- [把章节内容整理成生成的 C 数组](chapter-content-pipeline.zh_CN.md) —— 这些测试回头复核的那个生成器。
+- [把章节内容整理成生成的 C 数组](question-bank-pipeline.zh_CN.md) —— 这些测试回头复核的那个生成器。
 - `docs/development/engineering/build-and-test.zh_CN.md` —— 共享的验证门禁。
 - `tools/validate.sh` —— 每个测试的源文件清单就写在这里。

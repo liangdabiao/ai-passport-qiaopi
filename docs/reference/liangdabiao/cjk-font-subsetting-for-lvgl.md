@@ -4,7 +4,7 @@
 
 # Cutting a CJK Font Subset for LVGL
 
-Written while building the [Dao De Jing daily reading app](daodejing-daily/README.md),
+Written while building the [Qiaopi Quiz app](qiaopi-quiz/README.md),
 a fully offline Chinese reading device. These notes apply to any AI Passport
 application whose UI shows Chinese text: the numbers below are measured on an
 ESP32-C3 with 8 MB Flash and no PSRAM.
@@ -18,7 +18,7 @@ tofu boxes. LVGL has no fallback chain, so **every widget that shows Chinese mus
 be given a font that contains those characters**.
 
 This application displays one curated chapter plus its own interface strings, and
-that already needs **397 distinct code points**. The three subsets in this
+that already needs **1303 distinct code points**. The three subsets in this
 project cover all of them.
 
 ## Derive the glyph inventory; never hand-list it
@@ -28,7 +28,7 @@ label, and the failure is silent. Instead, generate the inventory by unioning
 three sources:
 
 1. **Every character of the chapter sources**, read through the same module that
-   feeds the table generator — `tools/daodejing/content.py` — so the C tables and
+   feeds the table generator — `tools/qiaopi/content.py` — so the C tables and
    the font can never disagree about what the text says. Read them as characters
    on a copy with all whitespace removed; splitting on whitespace yields
    sentences, not single ideographs, and the subset quietly ends up containing
@@ -43,13 +43,13 @@ three sources:
    picked up from the chapter text, but keeping it in the explicit list means a
    chapter edit that drops a punctuation mark cannot silently shrink the font.
 
-That produced 397 code points: 286 ideographs and 111 characters from the other
+That produced 1303 code points: 1079 ideographs and 224 characters from the other
 two groups. Writing them out to a checked-in `charset.txt` gives reviewers
 something to diff and gives the next person a way to see *why* a glyph is in
 there:
 
 ```text
-# total code points: 397  (CJK 286, other 111)
+# total code points: 1303  (CJK 1079, other 224)
 
 # --- CJK ideographs ---
 <286 ideographs, sorted by code point, one run with no separators:
@@ -90,7 +90,7 @@ variant or archaic form introduces a rare ideograph, and a converter given a
 character the font lacks does not necessarily stop; it can emit a font that is
 missing that glyph, and you discover it as one blank square in the middle of a
 line, on the device. Checking first turns that into a build-time error with up to
-forty offending characters printed. On this project the check reported 397/397
+forty offending characters printed. On this project the check reported 1303/1303
 present in Noto Sans CJK SC — cheap insurance that costs one pass over a
 character map.
 
@@ -107,8 +107,8 @@ lv_font_conv \
   --size 24 --bpp 4 \
   --format lvgl --no-compress \
   --lv-include lvgl.h \
-  --lv-font-name ddj_font_24 \
-  -o assets/fonts/ddj_font_24.c
+  --lv-font-name qpq_font_24 \
+  -o assets/fonts/qpq_font_24.c
 ```
 
 Choices worth knowing:
@@ -122,15 +122,15 @@ Choices worth knowing:
 - **Pin the converter version.** `lv_font_conv` 1.5.3 here; the generated data
   changes shape between releases, so the version is written into the generator
   rather than left to whatever is on `PATH`.
-- **Name each output after its size** (`ddj_font_16`, `ddj_font_24`,
-  `ddj_font_32`) so a widget's declaration says which size it is using. The
+- **Name each output after its size** (`qpq_font_16`, `qpq_font_24`,
+  `qpq_font_32`) so a widget's declaration says which size it is using. The
   generator derives the name from the size loop, so the two cannot drift.
 
 ## Turn on the large-font format
 
 LVGL's default text-format font stores each glyph's bitmap offset in 16 bits, so
 anything beyond 64 KB of bitmap data overflows that field. The bitmaps are not
-compressed, so the size is arithmetic: 397 glyphs at 4 bpp, each taking
+compressed, so the size is arithmetic: 1303 glyphs at 4 bpp, each taking
 `size * size / 2` bytes.
 
 | Subset | Bytes per glyph | Bitmap payload | Over the 64 KB field? |
@@ -180,9 +180,9 @@ trade on a part with no PSRAM.
 ## Declaration and use
 
 ```c
-LV_FONT_DECLARE(ddj_font_16);
-LV_FONT_DECLARE(ddj_font_24);
-LV_FONT_DECLARE(ddj_font_32);
+LV_FONT_DECLARE(qpq_font_16);
+LV_FONT_DECLARE(qpq_font_24);
+LV_FONT_DECLARE(qpq_font_32);
 ```
 
 Declare all three once in the UI header, then set a font on **every** text
@@ -195,7 +195,7 @@ hand is tempting.
 
 The source OTF is 16 MB, which does not belong in a firmware repository. The
 generator does not need it committed: it looks for the file at a configured path
-(`DDJ_SOURCE_FONT`, defaulting to a directory outside the repository) and, when
+(`QPQ_SOURCE_FONT`, defaulting to a directory outside the repository) and, when
 it is absent, `--download` fetches it from a pinned URL and **verifies a
 SHA-256** before writing it, so a changed upstream file fails loudly instead of
 silently changing the rendered glyphs. Record the font's name, licence (SIL Open
@@ -220,12 +220,12 @@ next to the generated files.
 
 ## Related documents
 
-- [Dao De Jing daily reading app](daodejing-daily/README.md) — the application
+- [Qiaopi Quiz app](qiaopi-quiz/README.md) — the application
   these subsets were cut for.
 - [Letting font metrics drive the layout](font-metrics-driven-layout.md) — the
   other half: the sizes of these fonts decide how many characters fit on a line
   and how tall a row has to be.
 - `docs/development/engineering/lvgl-chinese-fonts.md` — the repository's own
   font guidance.
-- `tools/daodejing/gen_font.py` and `assets/fonts/charset.txt` — the generator
+- `tools/qiaopi/gen_font.py` and `assets/fonts/charset.txt` — the generator
   and its checked-in inventory.

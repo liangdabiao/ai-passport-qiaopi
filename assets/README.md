@@ -17,17 +17,17 @@ Store reusable font files and generated font sources in `fonts/`.
 - Check Flash and internal-RAM impact before adding a font; the ESP32-C3 has no PSRAM.
 - Do not commit fonts whose license does not permit redistribution.
 
-### Dao De Jing daily reading app
+### Qiaopi Quiz app
 
 The application ships three uncompressed LVGL bitmap subsets so that every label the
 reader can see is drawn by a font we control:
 
 | File | Size and format | Use |
 | --- | --- | --- |
-| [`fonts/ddj_font_16.c`](fonts/ddj_font_16.c) | 16 px, 4 bpp, uncompressed LVGL | The bottom hint bar, the right-hand stance note inside a list row, and the small caption above the reflection layer. |
-| [`fonts/ddj_font_24.c`](fonts/ddj_font_24.c) | 24 px, 4 bpp, uncompressed LVGL | Top-bar titles, the commentary body, list-row text, and the reflection answers. |
-| [`fonts/ddj_font_32.c`](fonts/ddj_font_32.c) | 32 px, 4 bpp, uncompressed LVGL | The passage text — one sentence per screen. |
-| [`fonts/charset.txt`](fonts/charset.txt) | UTF-8 text | The shared 397-code-point inventory, kept so the subset can be reviewed without opening the generated C arrays. |
+| [`fonts/qpq_font_16.c`](fonts/qpq_font_16.c) | 16 px, 4 bpp, uncompressed LVGL | The bottom hint bar, the right-hand stance note inside a list row, and the small caption above the reflection layer. |
+| [`fonts/qpq_font_24.c`](fonts/qpq_font_24.c) | 24 px, 4 bpp, uncompressed LVGL | Top-bar titles, the commentary body, list-row text, and the reflection answers. |
+| [`fonts/qpq_font_32.c`](fonts/qpq_font_32.c) | 32 px, 4 bpp, uncompressed LVGL | The passage text — one sentence per screen. |
+| [`fonts/charset.txt`](fonts/charset.txt) | UTF-8 text | The shared 1303-code-point inventory, kept so the subset can be reviewed without opening the generated C arrays. |
 
 All three subsets come from one master font:
 
@@ -36,7 +36,7 @@ All three subsets come from one master font:
   [`notofonts/noto-cjk`](https://github.com/notofonts/noto-cjk).
 - **License:** SIL Open Font License 1.1. Subsetting and redistribution are permitted as
   long as the license text and copyright notice travel with the font.
-- **Character range:** 397 code points — 286 CJK ideographs taken from the curated chapter
+- **Character range:** 1303 code points — 1079 CJK ideographs taken from the question bank
   sources and the UI strings, plus 111 other code points: printable ASCII, the space, and
   the CJK punctuation the UI draws. LVGL's built-in Montserrat font is deliberately
   **not** used as a fallback: a code point missing from the subset renders as a blank box,
@@ -46,18 +46,18 @@ All three subsets come from one master font:
 - **Regenerate (from the repository root):**
 
   ```sh
-  python3 tools/daodejing/gen_font.py          # rebuild all three sizes
-  python3 tools/daodejing/gen_font.py --check  # verify the inventory and coverage only
+  python3 tools/qiaopi/gen_font.py          # rebuild all three sizes
+  python3 tools/qiaopi/gen_font.py --check  # verify the inventory and coverage only
   ```
 
-  Both forms read `tools/daodejing/chapters/*.txt` and the string literals of `main/*.c|*.h`,
+  Both forms read `tools/qiaopi/chapters/*.txt` and the string literals of `main/*.c|*.h`,
   so adding a new UI string or a new chapter requires re-running the generator. `--check` is
   what makes a missing glyph a build-time error rather than a blank box on the device.
 - **Destination:** compiled into the `main` component by the `target_sources` call in
   `main/CMakeLists.txt`; declare the fonts with `LV_FONT_DECLARE` and select them per
   widget. `CONFIG_LV_FONT_FMT_TXT_LARGE=y` in `sdkconfig.defaults` is required because
   LVGL's default text-format font stores a glyph's bitmap offset in 16 bits: the 24 px and
-  32 px subsets carry roughly 114 KB and 203 KB of bitmap data respectively (397 glyphs at
+  32 px subsets carry roughly 114 KB and 203 KB of bitmap data respectively (1303 glyphs at
   288 and 512 bytes each), both past the 64 KB field. The 16 px subset is about 51 KB and
   would fit, but the flag is per-font-format, so it is set once for all three.
 - **Generated source size (measured):** 293,734 / 565,633 / 920,969 bytes. Hex literals
