@@ -127,19 +127,36 @@ line. Searching backwards has no such hole.
 
 ## Verification
 
-- **Build:** cold build of the whole firmware, no warnings; the merged image is
-  produced from offset 0 and verified section by section.
-- **Host tests:** six suites over the platform-independent layer — the ADPCM
-  decoder against fixed vectors produced by the Python reference encoder (bit
-  exact), the blob index parser including nine rejection paths, the question
-  tables, the line breaker against the real bank in both sentence forms, the
-  round state machine, and the save format including its six rejection paths.
+- **Build:** cold build from an empty directory — **1,865 compilation units, 55
+  minutes, zero warnings and zero errors**. The merged image is produced from
+  offset 0 and verified section by section.
+- **Image:** app 7,139,632 bytes inside the 8,323,072-byte `factory` partition (14%
+  free); merged firmware 7,205,168 bytes, SHA-256 `3b114b46...`. Both
+  `_binary_qpq_audio_bin_start` and `qpq_font_{16,24,32}` appear in the map file,
+  which is what proves the audio blob and all three font subsets actually made it
+  into the image instead of merely sitting in the repository.
+- **Host tests:** six suites of this app's own over the platform-independent layer
+  — the ADPCM decoder against fixed vectors produced by the Python reference
+  encoder (bit exact), the blob index parser including nine rejection paths and a
+  check against the real `assets/audio/qpq_audio.bin` for clip count and total
+  samples, the question tables, the line breaker against the real bank in both
+  sentence forms, the round state machine, and the save format including its six
+  rejection paths. Together with the two inherited suites and the five BSP suites,
+  **13 C suites pass**.
 - **Generator freshness:** the question tables, the audio blob and the font
   inventory are all `--check`ed, so editing the source and forgetting to
   regenerate fails the gate instead of shipping stale data.
 - **Not verified:** nothing has been run on hardware. Key behaviour, the corner
-  mask, audio output level, battery gauge and NVS behaviour across power loss
-  are all unverified until the image is flashed.
+  mask, audio output level, battery gauge and NVS behaviour across power loss are
+  all unverified until the image is flashed.
+- **Two things this machine cannot attest** (both reproduced on the fork baseline
+  `776b7c5`, so neither is caused by this work): `tests/test_check_repo.py` fails
+  ten cases here, all of them about **symlinks**, with the identical case names
+  failing on the baseline; and `tests/test_archive_firmware.py` plus
+  `tests/test_install_passport_skills.py` hang, because deleting a temporary
+  directory hangs on this machine even when the temporary directory is moved to
+  another drive. On the firmware side, `test_verify_firmware` and
+  `test_deep_sleep_contract` pass.
 
 ## Content model
 
