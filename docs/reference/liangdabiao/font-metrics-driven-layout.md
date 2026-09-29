@@ -49,11 +49,12 @@ Where that landed here:
 | Home menu row | 24 px | 44 | 3 | 38 | 29 |
 | Settings row | 24 px | 44 | 3 | 38 | 29 |
 
-44 px is not a round number chosen for looks — it is the smallest height that
-also happens to clear the 32 px font's 38 px requirement, which is what makes it
-safe to reuse the same row height for a 24 px label today and a 32 px one later.
-Making every row 6 px taller than a naive 38 px choice would re-open the vertical
-budget for each page; here it is spent once, in one shared constant.
+44 px is not a round number chosen for looks. The 24 px font needs 29 px of usable
+height, so 40 px would have been enough — but 44 makes the usable 38 px, which is
+exactly what a 32 px label needs. The extra 4 px buys one thing: the shared row
+height survives a font-size change without re-opening the vertical budget of four
+pages. Spending it once, in one constant, is cheaper than re-deriving every page's
+budget the day a label grows.
 
 ## Budget the page vertically and show the arithmetic
 
