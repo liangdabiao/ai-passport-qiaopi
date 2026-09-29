@@ -14,6 +14,7 @@ idf_component_register(
          "qpq_wrap.c"
          "qpq_adpcm.c"
          "qpq_audio_index.c"
+         "qpq_volume.c"
          "qpq_text.c"
          # 服务
          "qpq_store.c"

@@ -7,13 +7,18 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 
+#include "qpq_volume.h"
+
 static const char *TAG = "qpq_store";
 
 // 命名空间与另一个应用（三字经 / 道德经日课）刻意不同名：同机刷过别的应用时，
 // 各家的进度互不覆盖。
 static const char *NAMESPACE = "qiaopi";
 static const char *KEY_PROGRESS = "progress";
-static const char *KEY_AUDIO = "audio";
+// 音量档位。旧版本用过 "audio" 这个键存「音效开关」（0/1），已经被音量档位取代；
+// 那个键留在旧机器的 NVS 里不再读写，无害 —— 但**不要**复用它，否则 0/1 会被当成
+// 0%/1% 的音量读进来。
+static const char *KEY_VOLUME = "volume";
 
 esp_err_t qpq_store_init(void)
 {
@@ -83,31 +88,34 @@ esp_err_t qpq_store_save(const qpq_progress_t *progress)
     return err;
 }
 
-esp_err_t qpq_store_load_audio_enabled(bool *enabled)
+esp_err_t qpq_store_load_volume(uint8_t *percent)
 {
-    if (!enabled) return ESP_ERR_INVALID_ARG;
-    *enabled = true;               // 默认开
+    if (!percent) return ESP_ERR_INVALID_ARG;
+    *percent = QPQ_VOLUME_DEFAULT;
 
     nvs_handle_t handle;
     esp_err_t err = nvs_open(NAMESPACE, NVS_READONLY, &handle);
     if (err != ESP_OK) return err;
 
-    uint8_t value = 1;
-    err = nvs_get_u8(handle, KEY_AUDIO, &value);
+    uint8_t value = QPQ_VOLUME_DEFAULT;
+    err = nvs_get_u8(handle, KEY_VOLUME, &value);
     nvs_close(handle);
     if (err != ESP_OK) return err;
 
-    *enabled = value != 0;
+    // 只做上界夹取，不检查「是不是档位表里的值」：档位表是界面策略，存储层不该
+    // 知道它。越界档位由 qpq_volume_next 兜住（回到第一个合法档位），那条路径有
+    // 宿主测试。
+    *percent = value > QPQ_VOLUME_MAX ? QPQ_VOLUME_MAX : value;
     return ESP_OK;
 }
 
-esp_err_t qpq_store_save_audio_enabled(bool enabled)
+esp_err_t qpq_store_save_volume(uint8_t percent)
 {
     nvs_handle_t handle;
     esp_err_t err = nvs_open(NAMESPACE, NVS_READWRITE, &handle);
     if (err != ESP_OK) return err;
 
-    err = nvs_set_u8(handle, KEY_AUDIO, enabled ? 1 : 0);
+    err = nvs_set_u8(handle, KEY_VOLUME, percent > QPQ_VOLUME_MAX ? QPQ_VOLUME_MAX : percent);
     if (err == ESP_OK) err = nvs_commit(handle);
     nvs_close(handle);
     return err;

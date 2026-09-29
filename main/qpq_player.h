@@ -60,8 +60,10 @@ bool qpq_player_voice_active(void);
 // 这时所有播放请求都会被安静地忽略 —— 应用照常能答题。
 bool qpq_player_ready(void);
 
-// 总静音开关。静音时仍然照常解码并写入静音样本，以保持播放时序不乱 —— 否则
-// 解除静音的瞬间位置会跳。它只影响输出，不打断任何正在进行的播放，所以
-// 「静音 → 解除静音」之后背景音乐会无缝接上。
-void qpq_player_set_muted(bool muted);
-bool qpq_player_muted(void);
+// 用户音量档位（百分比，0..100）。0 就是关 —— 所以这里没有单独的静音开关：
+// 三个键不值得两个设置项，而且「关」本来就是音量调到最小这一个动作。
+//
+// 档位表与缩放算术在 main/qpq_volume.c（纯逻辑、宿主可测），这里只负责把它
+// 应用到音频设备上。传入越界值（>100）会被夹到 100。
+void qpq_player_set_volume(uint8_t percent);
+uint8_t qpq_player_volume(void);

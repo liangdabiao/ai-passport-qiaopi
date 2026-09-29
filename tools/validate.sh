@@ -64,6 +64,14 @@ run_static_checks() {
         -o "${test_dir}/test_qpq_audio_index"
     "${test_dir}/test_qpq_audio_index"
 
+    # 音量档位与缩放。它断言的是「默认档位下的听感与加入音量功能之前完全一致」
+    # —— 基准值 100/75/63 乘以默认档位 80% 必须正好等于旧的固定值 80/60/50。
+    # 那句话如果只写在注释里，把 63 改成 64 谁也不会发现。
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_qpq_volume.c main/qpq_volume.c \
+        -o "${test_dir}/test_qpq_volume"
+    "${test_dir}/test_qpq_volume"
+
     # test_qpq_wrap 刻意连了 qpq_content/qpq_text：它断言的是「真实题库里那句话
     # 在真实每行字数预算下都放得下」，也就是「一屏放得下」这句话本身。两种显示
     # 形态（答题页的槽位、判卷页的已填空）都要过。

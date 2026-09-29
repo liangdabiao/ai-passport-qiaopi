@@ -30,8 +30,14 @@ void qpq_app_goto_summary(void);
 // ---- 共享状态。页面模块通过这几个入口读写，不各自持有副本 ----
 qpq_session_t *qpq_app_session(void);
 const qpq_progress_t *qpq_app_progress(void);
-bool qpq_app_audio_enabled(void);
-void qpq_app_set_audio_enabled(bool enabled);
+
+// 当前音量档位（0 = 关）。档位表与缩放算术在 main/qpq_volume.c。
+uint8_t qpq_app_volume(void);
+// 切到下一个档位并落盘（标题页的「音量」项用确定键调它）。到顶回绕到关。
+void qpq_app_cycle_volume(void);
+// 把当前档位写进 out（"关" / "80%"）。返回写入的字节数，容量不足返回 0。
+// 界面用它填菜单右侧的小字。
+uint16_t qpq_app_volume_text(char *out, size_t capacity);
 // 本局已用时间（秒）。从开始一局那一刻起算。
 int qpq_app_elapsed_seconds(void);
 

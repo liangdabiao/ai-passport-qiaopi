@@ -23,6 +23,7 @@
 #include "qpq_audio.h"
 #include "qpq_audio_blob.h"
 #include "qpq_audio_index.h"
+#include "qpq_volume.h"
 
 static const char *TAG = "qpq_player";
 
@@ -30,10 +31,18 @@ static const char *TAG = "qpq_player";
 // 越大 I2S 欠载风险越小。32 ms 在「按键响应」与「播放稳定」之间够用。
 #define QPQ_PLAYER_CHUNK_SAMPLES 512
 
-// 配音要压过背景音乐，所以两者用不同音量。
-#define QPQ_PLAYER_VOICE_VOLUME 80
-#define QPQ_PLAYER_BGM_VOLUME 50
-#define QPQ_PLAYER_TONE_VOLUME 60
+// 三路音频在用户音量 100% 时的编解码器音量。配音要压过背景音乐，提示音在两者
+// 之间。用户的音量档位按比例缩放它们（见 main/qpq_volume.c），所以调音量不会把
+// 配音与音乐的平衡调歪 —— 这是把「音量」做成一个整体档位、而不是给每一路各开一个
+// 设置的前提。
+//
+// 这三个值刻意写成 100/75/63 而不是「默认下要听到的」80/60/50：默认档位是 80%，
+// 而 100/75/63 乘以 80% 正好是 80/60/50，也就是本应用在加入音量功能之前写死的三个
+// 数。于是**默认档位下听感与之前逐位相同**，用户只有自己往上/往下调时才听到变化。
+// tests/test_qpq_volume.c 把这个等式钉住了。
+#define QPQ_PLAYER_VOICE_VOLUME QPQ_VOLUME_BASE_VOICE
+#define QPQ_PLAYER_BGM_VOLUME QPQ_VOLUME_BASE_BGM
+#define QPQ_PLAYER_TONE_VOLUME QPQ_VOLUME_BASE_TONE
 
 // 方波音效的幅度。满幅是 32767，取 6000 约 18% —— 提示音不该盖过语音。
 #define QPQ_TONE_AMPLITUDE 6000
@@ -47,6 +56,7 @@ typedef enum {
     CMD_BGM,
     CMD_STOP_ALL,
     CMD_TONE,        // clip 字段携带 qpq_tone_t
+    CMD_VOLUME,      // 用户改了音量档位，重新应用到音频设备
 } qpq_player_command_kind_t;
 
 typedef struct {
@@ -79,7 +89,13 @@ static volatile uint32_t s_generation;
 // 应用是否希望有背景音乐。配音播完后据此决定要不要接回去。
 static volatile bool s_bgm_requested;
 static volatile bool s_voice_active;
-static volatile bool s_muted;
+
+// 用户音量档位。界面任务写、播放任务读；一个字节的读写在 RISC-V 上是原子的，
+// 所以这里不加锁 —— 加锁反而会把一个「调音量」的动作变成可能阻塞按键回调的路径。
+// 0 就是关，没有第二个静音标志。
+static volatile uint8_t s_volume = QPQ_VOLUME_DEFAULT;
+// 当前正在播的那一路的基准音量。档位变化时据此重算，所以「播放中调音量」立刻生效。
+static uint8_t s_active_base = QPQ_VOLUME_BASE_BGM;
 
 // 音效叠加状态。只由播放任务读写；界面通过队列请求，所以不必加锁。
 typedef struct {
@@ -97,6 +113,21 @@ static int16_t s_chunk[QPQ_PLAYER_CHUNK_SAMPLES];
 
 static qpq_audio_index_t s_index;
 static bool s_audio_ready;
+
+// 把用户档位乘到某一路的基准音量上。
+static uint8_t scaled_volume(uint8_t base)
+{
+    return qpq_volume_scale(base, (uint8_t)s_volume);
+}
+
+// 应用某一路的音量。**只由播放任务调用** —— 所有触碰音频 codec 的动作都留在这一个
+// 任务里，与「I2S 只有一个写入者」是同一条纪律：换音量本质是一次 I2C 寄存器写，
+// 从界面任务直接写会和正在播放的任务撞在同一条 I2C 总线上。
+static void apply_volume(uint8_t base)
+{
+    s_active_base = base;
+    bsp_audio_set_volume(scaled_volume(base));
+}
 
 static void overlay_begin(qpq_tone_t tone)
 {
@@ -146,12 +177,12 @@ static void overlay_mix(int16_t *buf, uint32_t count)
     }
 }
 
-// 把一块样本写进 I2S。静音时写零而不是跳过写入 —— 跳过会让循环空转，并让播放
-// 位置与真实时间脱节，解除静音时会跳一下。
+// 把一块样本写进 I2S。音量为「关」时写零而不是跳过写入 —— 跳过会让循环空转，并让
+// 播放位置与真实时间脱节，把音量调回来时会跳一下。
 static bool write_chunk(uint32_t count)
 {
     if (count == 0) return true;
-    if (s_muted) memset(s_chunk, 0, (size_t)count * sizeof(s_chunk[0]));
+    if (s_volume == QPQ_VOLUME_OFF) memset(s_chunk, 0, (size_t)count * sizeof(s_chunk[0]));
     return bsp_audio_write(s_chunk, (size_t)count * sizeof(s_chunk[0])) == ESP_OK;
 }
 
@@ -233,20 +264,20 @@ static void run_command(const qpq_player_command_t *command, uint32_t generation
             if (!s_audio_ready) return;
             s_bgm_requested = true;
             s_voice_active = false;
-            bsp_audio_set_volume(QPQ_PLAYER_BGM_VOLUME);
+            apply_volume(QPQ_PLAYER_BGM_VOLUME);
             *bgm_running = true;
             return;
 
         case CMD_VOICE:
             if (!s_audio_ready) return;
-            bsp_audio_set_volume(QPQ_PLAYER_VOICE_VOLUME);
+            apply_volume(QPQ_PLAYER_VOICE_VOLUME);
             s_voice_active = true;
             // 配音优先：这里只播一次，背景音乐在这段时间里让位。
             stream_clip(generation, command->clip, false);
             s_voice_active = false;
             if (generation != s_generation) return;   // 期间有更新的命令
             if (s_bgm_requested) {
-                bsp_audio_set_volume(QPQ_PLAYER_BGM_VOLUME);
+                apply_volume(QPQ_PLAYER_BGM_VOLUME);
                 *bgm_running = true;
             }
             return;
@@ -265,7 +296,7 @@ static void player_task(void *arg)
         s_audio_ready = false;
     } else {
         s_audio_ready = true;
-        bsp_audio_set_volume(QPQ_PLAYER_BGM_VOLUME);
+        apply_volume(QPQ_PLAYER_BGM_VOLUME);
     }
 
     bool bgm_running = false;
@@ -287,6 +318,13 @@ static void player_task(void *arg)
                     overlay_begin((qpq_tone_t)command.clip);
                     continue;      // 音效只设叠加状态，不打断音乐
                 }
+                if (command.kind == CMD_VOLUME) {
+                    // 音量变化同样**不**能走 run_command：那条路径会把 bgm_running
+                    // 置假，随后音乐会被从头重新打开 —— 用户每调一次音量，音乐就
+                    // 从头开始一遍。这里就地改音量，位置不动。
+                    apply_volume(s_active_base);
+                    continue;
+                }
                 bgm_running = false;
                 run_command(&command, generation, &bgm_running);
             }
@@ -295,7 +333,7 @@ static void player_task(void *arg)
             // BGM 刚被停掉：若应用还想要音乐（例如只是被打断了一下），接着放。
             if (s_bgm_requested && s_audio_ready && !s_voice_active) {
                 generation = s_generation;
-                bsp_audio_set_volume(QPQ_PLAYER_BGM_VOLUME);
+                apply_volume(QPQ_PLAYER_BGM_VOLUME);
                 qpq_adpcm_stream_open(
                     &bgm_stream,
                     qpq_audio_index_clip(&s_index, (uint16_t)QPQ_AUDIO_BGM_CLIP),
@@ -308,15 +346,21 @@ static void player_task(void *arg)
         if (xQueueReceive(s_queue, &command, portMAX_DELAY) != pdTRUE) continue;
         generation = s_generation;
 
+        if (command.kind == CMD_VOLUME) {
+            // 没有音乐、也没有配音在放：什么都不用重开，只把新音量写给 codec。
+            apply_volume(s_active_base);
+            continue;
+        }
+
         if (command.kind == CMD_TONE) {
             // 没有音乐在放：音效自己占满出口。
-            bsp_audio_set_volume(QPQ_PLAYER_TONE_VOLUME);
+            apply_volume(QPQ_PLAYER_TONE_VOLUME);
             play_tone_now(generation, (qpq_tone_t)command.clip);
             continue;
         }
 
         if (command.kind == CMD_BGM) {
-            bsp_audio_set_volume(QPQ_PLAYER_BGM_VOLUME);
+            apply_volume(QPQ_PLAYER_BGM_VOLUME);
             qpq_adpcm_stream_open(
                 &bgm_stream,
                 qpq_audio_index_clip(&s_index, (uint16_t)QPQ_AUDIO_BGM_CLIP),
@@ -385,9 +429,10 @@ void qpq_player_play_voice(uint16_t clip)
 {
     if (!s_audio_ready) return;
     if (clip >= (uint16_t)QPQ_AUDIO_NARRATION_COUNT) return;
-    // 静音时直接不播。这里刻意**不**动代次：静音是全局面板上的开关，不该顺手
-    // 把背景音乐也打断 —— 那会让「解除静音后音乐回不来」成为一个很难查的现象。
-    if (s_muted) return;
+    // 音量关掉时直接不播（解码出来也是零，不如省掉一次抢占）。这里刻意**不**动
+    // 代次：音量是全局档位，不该顺手把背景音乐也打断 —— 那会让「把音量调回来之后
+    // 音乐回不来」成为一个很难查的现象。
+    if (s_volume == QPQ_VOLUME_OFF) return;
     enqueue(CMD_VOICE, clip, true);
 }
 
@@ -406,7 +451,7 @@ void qpq_player_stop_all(void)
 void qpq_player_play_tone(qpq_tone_t tone)
 {
     if (!s_audio_ready) return;
-    if (s_muted) return;
+    if (s_volume == QPQ_VOLUME_OFF) return;
     // 音效刻意**不**抢占：它要被叠加进正在播放的音频里，而不是把音乐切断。
     // 代价是队列满时会丢一个提示音 —— 提示音丢一个无妨，音乐断一下很刺耳。
     enqueue(CMD_TONE, (uint16_t)tone, false);
@@ -422,14 +467,21 @@ bool qpq_player_ready(void)
     return s_audio_ready;
 }
 
-void qpq_player_set_muted(bool muted)
+void qpq_player_set_volume(uint8_t percent)
 {
-    // 只改面板上的开关。正在播的音频会继续「无声地」往下走，从而保持时序；
-    // 解除静音时不会跳位置，也不需要重建播放状态。
-    s_muted = muted;
+    const uint8_t clamped = percent > QPQ_VOLUME_MAX ? QPQ_VOLUME_MAX : percent;
+    if (s_volume == clamped) return;
+    s_volume = clamped;
+    // 只改档位，然后通知播放任务去应用。正在播的音频会继续往下走（关档写零样本），
+    // 所以时序不乱、位置不跳，也不需要重建播放状态。
+    //
+    // 非抢占：调音量不该打断任何东西 —— 尤其是背景音乐，从头再来一遍比音量晚
+    // 32ms 生效刺耳得多。队列满时丢掉这次通知不影响正确性：下一次播放开始时会
+    // 按新档位重算音量。
+    enqueue(CMD_VOLUME, 0, false);
 }
 
-bool qpq_player_muted(void)
+uint8_t qpq_player_volume(void)
 {
-    return s_muted;
+    return s_volume;
 }

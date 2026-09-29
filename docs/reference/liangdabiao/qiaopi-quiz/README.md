@@ -82,11 +82,40 @@ Two details that only show up when measured:
 | Explanation appears inline under the options | Separate scrollable reveal page | Four option rows plus a paragraph do not fit in 248 px |
 | Narration is layered over the music | Music yields to narration, then resumes | One PCM sink, and on a 40 mm speaker speech under music is mud |
 | Question order is uniformly random | Questions not yet seen are preferred | The web has no memory between sessions; the device has NVS, and 91 questions random-sampled take about 20 rounds to see once |
-| Mute buttons for narration and music separately | One mute switch | Three keys do not justify two settings rows |
+| Mute buttons for narration and music separately | One volume row whose lowest step is off | Three keys do not justify two settings rows |
 
 The narration timing is kept exactly: the recording reads the **correct full
 sentence**, so it plays after the answer is given. Playing it earlier would give
 the answer away.
+
+## Keys, scrolling and volume
+
+Three keys have to cover everything, so each page states what they do in the bottom
+bar. Two places needed more than a one-line mapping.
+
+**The reveal page scrolls with the arrows.** Its content — result, the filled
+sentence, the explanation, the full original, the provenance — is always taller than
+one screen. The first version was unusable on hardware: the page handed every key to
+the state machine, and the state machine's reveal stage only recognises OK, so up
+and down did nothing and the second half of every answer was unreachable. The page
+now consumes the arrows itself, scrolling by one text line at a time (33 px — the
+24 px font's 29 px line height plus its 4 px line spacing, so lines land where they
+started), and the bottom bar switches between a "browse with up/down" hint when there is
+more below and an "at the end" hint when there is not — both fit the bar's 13-character
+line, at 4 and 3 characters respectively. The scrollbar is off deliberately: the container spans the
+whole card, so a scrollbar would be clipped by the 25 px corner radius, and reserving
+6 px for one would break the per-line character budget that the wrap test asserts.
+
+**Volume is one row with six steps** — off, then 20 / 40 / 60 / 80 / 100 percent, cycled
+with OK, and the lowest step *is* the off state, so there is no separate mute. The three
+audio paths (narration, interface tones, music) keep their fixed relative loudness;
+the chosen step scales all three. Their reference volumes are 100 / 75 / 63 at full
+scale, picked so that the default step (80%) reproduces exactly the 80 / 60 / 50 the
+player used before volume control existed. A host test asserts that equation,
+because otherwise "the default sounds the same as before" is a comment that quietly
+stops being true the first time someone rounds one of the three. The step lives under
+its own NVS key rather than inside the progress blob, so adding it needed no format
+version bump and no reader lost their record.
 
 ## Layout arithmetic
 
@@ -117,6 +146,32 @@ character per line, 22 characters can in principle need `ceil(22 / 7) = 4` lines
 case out is the host test, which wraps the real bank and asserts the result rather
 than trusting the cap. A cap that *derived* three lines would have to be 21.
 
+### The vertical budget, and why it is asserted
+
+The horizontal budget is checked twice — by the generator and by the wrap test. The
+**vertical** budget was not checked at all in the first version, and both layout
+defects that showed up on hardware came out of that gap:
+
+- The reveal page was a scrollable container that no key could scroll (see the
+  previous section): content taller than the screen, with no way to reach it.
+- The title page's statistics line sat at y = 250 inside a body region that is 248 px
+  tall. LVGL clips children to their parent by default, so the whole line was
+  invisible on the device — and nothing looked broken, because a missing
+  "seen 12/91 · best 240" line does not look like a bug.
+
+Each page now derives the bottom edge of its last element from its own constants and
+asserts it at compile time:
+
+```c
+_Static_assert(TITLE_STATS_Y + TITLE_STATS_H <= QPQ_BODY_H,
+               "the statistics line overflows the body and will be clipped");
+```
+
+This class of failure cannot be caught by the host tests, because the constants live
+in files that need LVGL. Turning them into `_Static_assert`s puts them back into the
+build: a wrong y value stops the compile, instead of shipping a screen that is merely
+missing something.
+
 Line breaking is hand-written, because LVGL breaks on spaces and Chinese has
 none. The rule is: keep at most N characters per line, and among the break
 positions that respect N, take the last one whose following character is not a
@@ -135,20 +190,27 @@ line. Searching backwards has no such hole.
   `_binary_qpq_audio_bin_start` and `qpq_font_{16,24,32}` appear in the map file,
   which is what proves the audio blob and all three font subsets actually made it
   into the image instead of merely sitting in the repository.
-- **Host tests:** six suites of this app's own over the platform-independent layer
+- **Host tests:** seven suites of this app's own over the platform-independent layer
   — the ADPCM decoder against fixed vectors produced by the Python reference
   encoder (bit exact), the blob index parser including nine rejection paths and a
   check against the real `assets/audio/qpq_audio.bin` for clip count and total
   samples, the question tables, the line breaker against the real bank in both
-  sentence forms, the round state machine, and the save format including its six
-  rejection paths. Together with the two inherited suites and the five BSP suites,
-  **13 C suites pass**.
+  sentence forms, the round state machine, the save format including its six
+  rejection paths, and the volume ladder — which asserts that the default step
+  reproduces the fixed volumes the player used before volume control existed.
+  Together with the two inherited suites and the five BSP suites, **14 C suites
+  pass**.
 - **Generator freshness:** the question tables, the audio blob and the font
   inventory are all `--check`ed, so editing the source and forgetting to
   regenerate fails the gate instead of shipping stale data.
-- **Not verified:** nothing has been run on hardware. Key behaviour, the corner
-  mask, audio output level, battery gauge and NVS behaviour across power loss are
-  all unverified until the image is flashed.
+- **Found by the first hardware test, then fixed:** the reveal page could not be
+  scrolled by any key, and the title page's statistics line was outside the clipped
+  body region. Both are described above; the fixes themselves are unverified until
+  the image is flashed again.
+- **Not verified:** key behaviour, the corner mask, audio output level, battery gauge
+  and NVS behaviour across power loss are all still unverified — the first hardware
+  pass confirmed the screen, the keys and audio output work at all, but nothing about
+  levels, timing or power has been measured on the bench.
 - **Two things this machine cannot attest** (both reproduced on the fork baseline
   `776b7c5`, so neither is caused by this work): `tests/test_check_repo.py` fails
   ten cases here, all of them about **symlinks**, with the identical case names

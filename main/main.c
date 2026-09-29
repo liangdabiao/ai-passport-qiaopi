@@ -151,8 +151,8 @@ void app_main(void)
         s_input_ready = true;
     }
 
-    ESP_LOGI(TAG, "就绪:显示=OK 按键=%s 音频=%s 静音=%s",
+    ESP_LOGI(TAG, "就绪:显示=OK 按键=%s 音频=%s 音量=%u%%",
              input_err == ESP_OK ? "OK" : "FAIL",
              qpq_player_ready() ? "OK" : "FAIL",
-             qpq_player_muted() ? "开" : "关");
+             (unsigned)qpq_player_volume());
 }

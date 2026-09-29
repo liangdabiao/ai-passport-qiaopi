@@ -129,6 +129,43 @@ Reveal page
 The ask page comes out at exactly 248 px, which is the point: the numbers were
 solved for, not fitted afterwards.
 
+## The vertical budget needs asserting too — and a scroll container needs a key
+
+The assertions above are all about **width**. The vertical budget was written down in
+a comment and nowhere else, and the first hardware test found two defects that both
+came out of that gap:
+
+1. **A scrollable container that no key could scroll.** The reveal page is taller
+   than one screen and is the only scrollable object in the app. But its key handler
+   forwarded every key to the state machine, and the state machine's reveal stage
+   recognises only OK — up and down returned "no action" and were dropped. On the
+   device the reader could see the result and the answer, and never the explanation,
+   the full passage or the provenance. Making something scrollable is not the same as
+   making it reachable; **every scrollable region needs a key that moves it**, and
+   the check is a one-liner: what does each physical key do while this region is on
+   screen?
+2. **A line placed below the body region.** The title page's statistics label sat at
+   y = 250 in a 248 px tall body. LVGL clips children to their parent by default, so
+   the line simply did not exist on the device. Nothing looked broken, because a
+   missing "seen 12/91 · best 240" line does not look like a bug — this kind of defect
+   is invisible in review and invisible on screen.
+
+Each page now asserts its own vertical budget:
+
+```c
+#define TITLE_MENU_END \
+    (TITLE_MENU_Y + (TITLE_ITEMS - 1) * (QPQ_ROW_H + QPQ_ROW_GAP) + QPQ_ROW_H)
+_Static_assert(TITLE_MENU_END <= QPQ_BODY_H, "the last menu row will be clipped");
+_Static_assert(TITLE_STATS_Y + TITLE_STATS_H <= QPQ_BODY_H, "the statistics line will be clipped");
+_Static_assert(TITLE_STATS_Y + TITLE_STATS_H <= TITLE_MENU_Y, "the statistics line overlaps the menu");
+```
+
+A host test cannot cover this: the constants live in files that include `lvgl.h`. The
+compile-time assertion is the only mechanism that stays in the loop for free — and
+the fix for the statistics line was to move it **into** the space freed by a
+decorative subtitle that duplicated the top bar, so the assertion passed without
+shrinking anything.
+
 ## Related
 
 - [Qiaopi Quiz app](qiaopi-quiz/README.md) — the pages these constants govern.

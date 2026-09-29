@@ -17,19 +17,30 @@
 
 static const char *const TITLE_LABEL[TITLE_ITEMS] = {
     "开始一局",
-    "音效",
+    "音量",
     "重置记录",
 };
 
 // 三项菜单里右侧小字要放得下「已重置」这种四字提示。
 #define TITLE_NOTE_W 72
-// 版式（相对页面卡）：顶栏 0..36 / 大字 42..82 / 小字 88..108 /
-// 菜单 124..240 / 成绩 250..270 / 底栏 284..310
+// 版式（相对页面卡，正文区高 QPQ_BODY_H = 248）：顶栏 0..36 / 大字 42..82 /
+// 成绩 88..108 / 菜单 124..240 / 底栏 284..310
+//
+// 成绩行原来在 250 —— **超出正文区底部 2px，整行被 LVGL 裁掉，在真机上是不可见的**。
+// 当时没人发现是因为它只是「已见 x/91 · 最好 y 分」这么一行小字，缺了不会让人起疑。
+// 现在它接替了原来那句与顶栏重复的副标题（「民国侨批 · 填字问答」），于是既回到
+// 正文区内，又没有减少任何信息。下面两条断言把这个结论钉在编译期。
 #define TITLE_HEADLINE_Y 42
 #define TITLE_HEADLINE_H  40
-#define TITLE_TAGLINE_Y   88
+#define TITLE_STATS_Y     88
+#define TITLE_STATS_H     20   // 16px 字库的行高
 #define TITLE_MENU_Y      124
-#define TITLE_STATS_Y     250
+
+#define TITLE_MENU_END \
+    (TITLE_MENU_Y + (TITLE_ITEMS - 1) * (QPQ_ROW_H + QPQ_ROW_GAP) + QPQ_ROW_H)
+_Static_assert(TITLE_MENU_END <= QPQ_BODY_H, "菜单最后一行超出正文区，会被裁掉");
+_Static_assert(TITLE_STATS_Y + TITLE_STATS_H <= QPQ_BODY_H, "成绩行超出正文区，会被裁掉");
+_Static_assert(TITLE_STATS_Y + TITLE_STATS_H <= TITLE_MENU_Y, "成绩行会与菜单重叠");
 
 static qpq_row_t s_rows[TITLE_ITEMS];
 static lv_obj_t *s_hint;
@@ -45,8 +56,10 @@ static void title_refresh(void)
 
     char notes[TITLE_ITEMS][16];
     notes[0][0] = '\0';
-    snprintf(notes[1], sizeof(notes[1]), "%s",
-             qpq_app_audio_enabled() ? "开" : "关");
+    // 音量档位：0 档的文本就是「关」，所以这一项同时承担了原来「音效开关」的职责
+    // —— 三个键不值得两个设置项。档位文本最长是 "100%"（5 字节含结尾），每格 16
+    // 字节，不可能写不下。
+    (void)qpq_app_volume_text(notes[1], sizeof(notes[1]));
     snprintf(notes[2], sizeof(notes[2]), "%s", s_confirm_reset ? "再按一次" : "");
 
     for (int index = 0; index < TITLE_ITEMS; index++) {
@@ -69,9 +82,13 @@ static void title_refresh(void)
     }
 
     if (s_hint) {
-        lv_label_set_text(s_hint,
-                          s_confirm_reset ? "再按一次确定即清空记录"
-                                          : "上下选择 · 确定进入");
+        if (s_confirm_reset) {
+            lv_label_set_text(s_hint, "再按一次确定即清空记录");
+        } else if (s_sel == 1) {
+            lv_label_set_text(s_hint, "确定 切换音量档位");
+        } else {
+            lv_label_set_text(s_hint, "上下选择 · 确定进入");
+        }
     }
 }
 
@@ -89,8 +106,11 @@ static void title_activate(void)
             return;
 
         case 1:
+            // 先改档位、再响提示音：从「关」往上调的那一次，提示音必须按**新**档位
+            // 响出来。顺序反过来会静默 —— 关档时音效被直接丢弃，用户按了确定什么
+            // 都没听到，会以为按键坏了或音量没调上去。
+            qpq_app_cycle_volume();
             qpq_player_play_tone(QPQ_TONE_ENTER);
-            qpq_app_set_audio_enabled(!qpq_app_audio_enabled());
             title_refresh();
             return;
 
@@ -133,17 +153,17 @@ lv_obj_t *qpq_page_title_enter(void)
                                              QPQ_BODY_W, TITLE_HEADLINE_H, QPQ_C_INK);
     lv_label_set_text(headline, "侨批");
 
-    qpq_note_create(body, QPQ_BODY_X, TITLE_TAGLINE_Y, QPQ_BODY_W,
-                    "民国侨批 · 填字问答", QPQ_C_MUTED);
+    // 这一行原来是副标题「民国侨批 · 填字问答」，与顶栏那句几乎重复；让位给成绩。
+    // 位置没变，变的是内容更有用 —— 也顺手修掉了它以前被放在正文区之外、
+    // 在真机上根本看不见的问题（见上面的版式注释与断言）。
+    s_stats = qpq_note_create(body, QPQ_BODY_X, TITLE_STATS_Y, QPQ_BODY_W, "",
+                              QPQ_C_MUTED);
 
     for (int index = 0; index < TITLE_ITEMS; index++) {
         const int y = TITLE_MENU_Y + index * (QPQ_ROW_H + QPQ_ROW_GAP);
         s_rows[index] = qpq_row_create(body, QPQ_BODY_X, y, QPQ_BODY_W, QPQ_ROW_H,
                                        0, TITLE_NOTE_W);
     }
-
-    s_stats = qpq_note_create(body, QPQ_BODY_X, TITLE_STATS_Y, QPQ_BODY_W, "",
-                              QPQ_C_MUTED);
 
     title_refresh();
     return screen;

@@ -11,6 +11,7 @@
 #include "qpq_content.h"
 #include "qpq_player.h"
 #include "qpq_store.h"
+#include "qpq_volume.h"
 
 static const char *TAG = "qpq_app";
 
@@ -24,7 +25,9 @@ typedef enum {
 
 static qpq_session_t s_session;
 static qpq_progress_t s_progress;
-static bool s_audio_enabled = true;
+// 音量档位。默认值来自 qpq_volume.h —— 那一份定义同时被播放器与宿主测试使用，
+// 所以「默认档位的听感与加音量功能之前一致」不会因为两处各写一个 80 而失效。
+static uint8_t s_volume = QPQ_VOLUME_DEFAULT;
 static int64_t s_run_start_us;
 
 static lv_obj_t *s_screen;
@@ -82,20 +85,24 @@ const qpq_progress_t *qpq_app_progress(void)
     return &s_progress;
 }
 
-bool qpq_app_audio_enabled(void)
+uint8_t qpq_app_volume(void)
 {
-    return s_audio_enabled;
+    return s_volume;
 }
 
-void qpq_app_set_audio_enabled(bool enabled)
+uint16_t qpq_app_volume_text(char *out, size_t capacity)
 {
-    if (s_audio_enabled == enabled) return;
-    s_audio_enabled = enabled;
-    qpq_player_set_muted(!enabled);
-    const esp_err_t err = qpq_store_save_audio_enabled(enabled);
+    return qpq_volume_text(s_volume, out, capacity);
+}
+
+void qpq_app_cycle_volume(void)
+{
+    s_volume = qpq_volume_next(s_volume);
+    qpq_player_set_volume(s_volume);
+    const esp_err_t err = qpq_store_save_volume(s_volume);
     if (err != ESP_OK) {
         // 存不下来不影响本次使用，只影响下次开机 —— 记一笔就好，不打断用户。
-        ESP_LOGW(TAG, "音效开关未能持久化：%s", esp_err_to_name(err));
+        ESP_LOGW(TAG, "音量未能持久化：%s", esp_err_to_name(err));
     }
 }
 
@@ -159,11 +166,14 @@ void qpq_app_start(void)
         ESP_LOGW(TAG, "进度读取未成功（%s），按空档处理", esp_err_to_name(err));
     }
 
-    bool audio = true;
-    if (qpq_store_load_audio_enabled(&audio) == ESP_OK) {
-        s_audio_enabled = audio;
+    // 音量档位。读不到（首次开机、或旧版本只存过「音效开关」）时存档层已经把
+    // 输出设成默认档位，所以这里不看返回值也能用；但真正的失败值得记一笔。
+    uint8_t volume = QPQ_VOLUME_DEFAULT;
+    if (qpq_store_load_volume(&volume) != ESP_OK) {
+        ESP_LOGI(TAG, "无音量存档，用默认档位 %u%%", (unsigned)QPQ_VOLUME_DEFAULT);
     }
-    qpq_player_set_muted(!s_audio_enabled);
+    s_volume = volume;
+    qpq_player_set_volume(s_volume);
 
     seed_session();
     s_page = PAGE_NONE;

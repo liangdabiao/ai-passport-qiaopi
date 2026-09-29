@@ -21,10 +21,20 @@
 #define SUMMARY_DESC_Y     168
 #define SUMMARY_DESC_H     80
 
+// 版式断言。这一页也是用满 248px 的一页，同样用编译期把「最后一项还在不在
+// 正文区内、有没有互相重叠」钉住。
+#define SUMMARY_STAT_COUNT 4
+#define SUMMARY_NOTE_H     20   // 16px 字库的行高
+#define SUMMARY_STATS_END \
+    (SUMMARY_STATS_Y + (SUMMARY_STAT_COUNT - 1) * SUMMARY_STAT_STEP + SUMMARY_NOTE_H)
+_Static_assert(SUMMARY_STATS_END <= SUMMARY_DESC_Y, "统计行与评语重叠");
+_Static_assert(SUMMARY_DESC_Y + SUMMARY_DESC_H <= QPQ_BODY_H, "评语超出正文区，会被裁掉");
+_Static_assert(SUMMARY_SUBTITLE_Y + SUMMARY_NOTE_H <= SUMMARY_STATS_Y, "副标题与统计行重叠");
+
 static lv_obj_t *s_hint;
 static lv_obj_t *s_rank;
 static lv_obj_t *s_subtitle;
-static lv_obj_t *s_stat[4];
+static lv_obj_t *s_stat[SUMMARY_STAT_COUNT];
 static lv_obj_t *s_desc;
 static qpq_topbar_t s_bar;
 
@@ -63,7 +73,7 @@ lv_obj_t *qpq_page_summary_enter(void)
     s_rank = NULL;
     s_subtitle = NULL;
     s_desc = NULL;
-    for (int index = 0; index < 4; index++) s_stat[index] = NULL;
+    for (int index = 0; index < SUMMARY_STAT_COUNT; index++) s_stat[index] = NULL;
 
     lv_obj_t *card = NULL;
     lv_obj_t *screen = qpq_page_create(&card);
@@ -81,7 +91,7 @@ lv_obj_t *qpq_page_summary_enter(void)
     lv_obj_set_height(s_subtitle, LV_SIZE_CONTENT);
     lv_obj_set_style_text_align(s_subtitle, LV_TEXT_ALIGN_CENTER, 0);
 
-    for (int index = 0; index < 4; index++) {
+    for (int index = 0; index < SUMMARY_STAT_COUNT; index++) {
         s_stat[index] = qpq_note_create(body, QPQ_BODY_X,
                                         SUMMARY_STATS_Y + index * SUMMARY_STAT_STEP,
                                         QPQ_BODY_W, "", QPQ_C_INK_SOFT);
@@ -100,7 +110,7 @@ void qpq_page_summary_leave(void)
     s_rank = NULL;
     s_subtitle = NULL;
     s_desc = NULL;
-    for (int index = 0; index < 4; index++) s_stat[index] = NULL;
+    for (int index = 0; index < SUMMARY_STAT_COUNT; index++) s_stat[index] = NULL;
 }
 
 void qpq_page_summary_key(qpq_key_t key)

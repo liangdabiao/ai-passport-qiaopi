@@ -19,6 +19,14 @@
 #define ASK_SENTENCE_H 87
 #define ASK_OPTION_Y   92
 
+// 版式断言。这一页的纵向预算用得最满（正文区 248px 里用掉 248px，余量为零），所以
+// 「最后一行候选还在不在正文区内」必须由编译器保证 —— 判卷页的滚动问题、标题页
+// 成绩行被裁掉，都是同一类错：算错一个 y 值，界面上不报错，只是有东西看不见。
+#define ASK_OPTION_END \
+    (ASK_OPTION_Y + (QPQ_OPTION_COUNT - 1) * (QPQ_ROW_H + QPQ_ROW_GAP) + QPQ_ROW_H)
+_Static_assert(ASK_OPTION_END <= QPQ_BODY_H, "最后一行候选超出正文区，会被裁掉");
+_Static_assert(ASK_SENTENCE_Y + ASK_SENTENCE_H <= ASK_OPTION_Y, "句子与候选行重叠");
+
 static lv_obj_t *s_hint;
 static lv_obj_t *s_sentence;
 static qpq_topbar_t s_bar;
