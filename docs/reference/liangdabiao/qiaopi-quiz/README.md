@@ -182,14 +182,23 @@ line. Searching backwards has no such hole.
 
 ## Verification
 
-- **Build:** cold build from an empty directory — **1,865 compilation units, 55
+- **Build:** cold build from an empty directory — **1,865 compilation units, ~50
   minutes, zero warnings and zero errors**. The merged image is produced from
   offset 0 and verified section by section.
-- **Image:** app 7,139,632 bytes inside the 8,323,072-byte `factory` partition (14%
-  free); merged firmware 7,205,168 bytes, SHA-256 `3b114b46...`. Both
+- **Image:** app 7,140,368 bytes inside the 8,323,072-byte `factory` partition (14%
+  free); merged firmware 7,205,904 bytes, SHA-256 `0d37d878...`, embedded version
+  `fea720f` — the commit the firmware sources were built from.
+- **Three builds, one size.** The app image came out at 7,140,368 bytes in the cold
+  build from an empty directory, in an incremental rebuild afterwards, and in the
+  final rebuild that fixed the embedded version string. Identical byte counts across
+  all three is the evidence that the incremental builds compiled everything they
+  should have. The SHA-256 differs between them because the app descriptor embeds
+  the build time, which is exactly why the delivered image is the one whose embedded
+  version is a real commit and not a dirty working tree.
+- **The image really contains the audio and the fonts:** both
   `_binary_qpq_audio_bin_start` and `qpq_font_{16,24,32}` appear in the map file,
-  which is what proves the audio blob and all three font subsets actually made it
-  into the image instead of merely sitting in the repository.
+  which is what proves the 5.3 MB blob and all three font subsets made it into the
+  image instead of merely sitting in the repository.
 - **Host tests:** seven suites of this app's own over the platform-independent layer
   — the ADPCM decoder against fixed vectors produced by the Python reference
   encoder (bit exact), the blob index parser including nine rejection paths and a

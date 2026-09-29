@@ -164,6 +164,36 @@ actionlint -color .github/workflows/*.yml
 for t in test_deep_sleep_contract test_verify_firmware; do python3 tests/$t.py; done
 ```
 
+## The embedded version string is decided at configure time
+
+An ESP-IDF app carries a version string in its descriptor, and by default that string
+is the abbreviated commit of the project directory — plus `-dirty` when the working
+tree has uncommitted changes. Two consequences, both of which cost time here:
+
+- **An incremental build does not refresh it.** The value is baked in as a compile
+  definition when CMake configures, so recompiling and relinking alone keeps the old
+  string. A tree that was dirty during the last configure keeps saying `-dirty`
+  forever, and the image then claims a commit that is not the one it was built from.
+  Fix: run `idf.py -B <build dir> reconfigure` (about three minutes: 94 s configure
+  plus 79 s generate) and then build. Doing that took the delivered image from
+  `cd86f87-dirty` to `fea720f`, the actual HEAD.
+- **Editing files while a build runs poisons the string.** A cold build here took
+  about fifty minutes, and a second session committed documentation changes during
+  it; the configure step had already seen a dirty tree, so the finished image
+  embedded a hash that never existed as a commit.
+
+Practical rule: for anything you intend to hand over, make sure the working tree is
+clean *before* configure, and check the resulting string rather than assuming it:
+
+```bash
+grep -o '"project_version": *"[^"]*"' <build dir>/project_description.json
+```
+
+Also worth knowing: **the SHA-256 of the merged image is not reproducible across
+builds**, because the descriptor embeds the build time. Rebuilding the same sources
+gives the same byte count but a different hash. So "is this the image I validated?"
+has to be answered with the hash you recorded at build time, not by rebuilding.
+
 ## Check list
 
 - Confirm whether `MSYSTEM` is set before blaming anything else; it changes
