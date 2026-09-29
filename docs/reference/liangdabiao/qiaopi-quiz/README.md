@@ -46,9 +46,10 @@ The device has no filesystem, so the audio is a single self-describing binary
 blob embedded in the firmware image and read through the flash mapping:
 
 ```
-offset  0   magic "QPQA", version, clip count, sample rate
+offset  0   magic "QPQA", version, clip count, sample rate, reserved  (16 bytes)
 offset 16   index: { uint32 offset, uint32 samples } per clip
-then        per clip: int16 first sample, uint8 initial step index, nibbles
+then        per clip: int16 first sample, uint8 initial step index,
+            uint8 reserved, then the nibbles, two samples per byte
 ```
 
 Clips 0..90 are the dialect narrations of the correct sentence for questions 1..91
@@ -107,6 +108,14 @@ The sentence has two forms and both are capped: the ask page can only show the
 blank, so it renders an empty slot of the same character count as the source
 sentence, while the reveal page shows the answer filled in. Capping only one of
 them would fail somewhere in the middle of a round.
+
+It is worth being clear about what the cap in that table is and is not. It is set
+from the longest sentence actually shipped (22 characters), not derived from the
+line budget, and the two are not independent: because the break rule can lose one
+character per line, 22 characters can in principle need `ceil(22 / 7) = 4` lines —
+152 px against the 87 px the ask page reserves for the sentence. What rules that
+case out is the host test, which wraps the real bank and asserts the result rather
+than trusting the cap. A cap that *derived* three lines would have to be 21.
 
 Line breaking is hand-written, because LVGL breaks on spaces and Chinese has
 none. The rule is: keep at most N characters per line, and among the break
