@@ -187,7 +187,10 @@ line. Searching backwards has no such hole.
   offset 0 and verified section by section.
 - **Image:** app 7,140,368 bytes inside the 8,323,072-byte `factory` partition (14%
   free); merged firmware 7,205,904 bytes, SHA-256 `0d37d878...`, embedded version
-  `fea720f` — the commit the firmware sources were built from.
+  `fea720f` — the commit the firmware sources were built from. Documentation-only
+  commits after it leave the image unchanged, which is checkable rather than
+  assumed: `git diff fea720f <commit> -- main components sdkconfig.defaults
+  partitions.csv CMakeLists.txt` comes back empty.
 - **Three builds, one size.** The app image came out at 7,140,368 bytes in the cold
   build from an empty directory, in an incremental rebuild afterwards, and in the
   final rebuild that fixed the embedded version string. Identical byte counts across
