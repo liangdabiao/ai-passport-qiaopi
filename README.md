@@ -14,6 +14,14 @@ four candidates. All 91 questions, their narration and the background music live
 names the sender and the year — so this is not a word bank to guess at, it is 91 pieces of history
 you can actually read.
 
+| Title | Question | Answer | Summary |
+| --- | --- | --- | --- |
+| ![Title page: start a round, volume, reset record](assets/images/qiaopi/qiaopi-title.png) | ![Question page: one blanked line and four candidates](assets/images/qiaopi/qiaopi-ask.png) | ![Answer page: right or wrong, explanation, full text, source](assets/images/qiaopi/qiaopi-reveal.png) | ![Summary page: rank, four figures, comment](assets/images/qiaopi/qiaopi-summary.png) |
+| A large title, three entries and one line of progress. | Category and question number on top, one blanked line of a letter, four candidates below. | Right or wrong, the answer, the explanation, the full text and the source — taller than a screen, so it turns. | A rank and a comment, plus correct answers, best streak, time and score. |
+
+The four screens above are drawn from the layout parameters in the source; they are not device
+photographs. See [`assets/README.md`](assets/README.md) for how they are generated.
+
 ## How a round goes
 
 | Page | What is on screen | The three keys |

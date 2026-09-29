@@ -82,6 +82,32 @@ Store reusable source images and generated display assets in `images/`.
 | [`images/logo-wordmark.png`](images/logo-wordmark.png) | 1648 × 336, PNG RGBA | Transparent black wordmark extracted from the repository's original `images/logo.png`; embedded in both project README files for light backgrounds. |
 | [`images/logo-wordmark-dark.png`](images/logo-wordmark-dark.png) | 1648 × 336, PNG RGBA | White version of the extracted wordmark, used by the README `<picture>` element when GitHub is in dark mode. |
 
+### The four screens of the Qiaopi game
+
+`images/qiaopi/` holds the screen images the project README embeds:
+
+| File | Dimensions and format | Content |
+| --- | --- | --- |
+| [`images/qiaopi/qiaopi-title.png`](images/qiaopi/qiaopi-title.png) | 1152 × 1536, PNG RGB | Title page: the large title, three entries and the progress line, with the first entry selected. |
+| [`images/qiaopi/qiaopi-ask.png`](images/qiaopi/qiaopi-ask.png) | 1152 × 1536, PNG RGB | Question page: category and question number, one line of a letter with a blank, and four candidates. |
+| [`images/qiaopi/qiaopi-reveal.png`](images/qiaopi/qiaopi-reveal.png) | 1152 × 1536, PNG RGB | Answer page: right or wrong, the correct answer, the filled line and the explanation; the content is cut at 248px, which is exactly why the page has to be turned by key. |
+| [`images/qiaopi/qiaopi-summary.png`](images/qiaopi/qiaopi-summary.png) | 1152 × 1536, PNG RGB | Summary page: rank and comment, correct answers, best streak, time and score. |
+| [`images/qiaopi/screens-source.py`](images/qiaopi/screens-source.py) | Python | The generator that turns the layout constants and a real question into HTML. |
+| [`images/qiaopi/screens-source.html`](images/qiaopi/screens-source.html) | HTML, 13 KB | Its output: four 240 × 320 device frames side by side, for review and capture. |
+
+- **These four images are drawn from the layout constants in the source; they are not device
+  photographs.** The geometry comes from `main/qpq_ui.{h,c}` (page inset 5, top bar 36 / hint bar 26,
+  body 210 × 248, row height 36 with a 4px gap), `main/qpq_page_*.c` (each page's element coordinates)
+  and `main/qpq_wrap.c` (the line-breaking algorithm, replicated character by character so the breaks
+  match the device). The question content is question 1 from `main/qpq_text.c`, and the summary
+  numbers follow `QPQ_SCORE_CORRECT` / `QPQ_SCORE_STREAK_BONUS` consistently: 13 of 20, best streak 5
+  means 115 points, 65%, one rank above the middle.
+- **They are not firmware assets**: documentation only, never flashed, costing no Flash.
+- **Regenerate:** run `python3 screens-source.py` to rebuild the HTML, then render each 240 × 320
+  frame on its own at 4.8× device scale (`--window-size=240,320 --force-device-scale-factor=4.8`),
+  which lands on exactly 1152 × 1536. The system's Noto Sans CJK / Microsoft YaHei stands in for the
+  device's Noto Sans CJK SC, so glyph shapes differ slightly.
+
 - Use descriptive names and document dimensions, pixel format, conversion steps, and destination.
 - Prefer formats suitable for the 240 × 320 RGB565 display and account for Flash and internal RAM.
 - Preserve editable sources where licensing permits, and record the source and license.

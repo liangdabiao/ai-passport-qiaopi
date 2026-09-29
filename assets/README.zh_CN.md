@@ -73,6 +73,30 @@
 | [`images/logo-wordmark.png`](images/logo-wordmark.png) | 1648 × 336，PNG RGBA | 从仓库原始 `images/logo.png` 中精确裁切并去除背景的黑色字标；用于中英文项目 README 的浅色主题。 |
 | [`images/logo-wordmark-dark.png`](images/logo-wordmark-dark.png) | 1648 × 336，PNG RGBA | 提取字标的白色版本；README 使用 `<picture>` 在 GitHub 深色主题下显示。 |
 
+### 侨批游戏的四个页面
+
+`images/qiaopi/` 存放首页 README 用的四张界面图：
+
+| 文件 | 尺寸与格式 | 内容 |
+| --- | --- | --- |
+| [`images/qiaopi/qiaopi-title.png`](images/qiaopi/qiaopi-title.png) | 1152 × 1536，PNG RGB | 标题页：侨批大字、三项菜单、成绩行，第一项为选中态。 |
+| [`images/qiaopi/qiaopi-ask.png`](images/qiaopi/qiaopi-ask.png) | 1152 × 1536，PNG RGB | 答题页：顶栏分类与题号、一句带空槽位的侨批、四个候选（甲乙丙丁）。 |
+| [`images/qiaopi/qiaopi-reveal.png`](images/qiaopi/qiaopi-reveal.png) | 1152 × 1536，PNG RGB | 判卷页：对错、正确答案、已填空整句、解析；内容在 248px 处被裁，正是「要按下键翻页」的由来。 |
+| [`images/qiaopi/qiaopi-summary.png`](images/qiaopi/qiaopi-summary.png) | 1152 × 1536，PNG RGB | 结算页：评级与评语、正确数、最高连对、用时、得分。 |
+| [`images/qiaopi/screens-source.py`](images/qiaopi/screens-source.py) | Python | 生成器：把版式常量与真实题目写成 HTML。 |
+| [`images/qiaopi/screens-source.html`](images/qiaopi/screens-source.html) | HTML，13 KB | 生成结果：四个 240 × 320 设备框并排，供人查看与截图。 |
+
+- **这四张是按源码版式参数重绘的示意图，不是真机照片。** 几何全部取自
+  `main/qpq_ui.{h,c}`（页面卡内缩 5、顶栏 36 / 底栏 26、正文 210 × 248、行高 36 + 间隔 4）、
+  `main/qpq_page_*.c`（每一页的元素坐标）与 `main/qpq_wrap.c`（折行算法，生成器逐字复刻，
+  断字位置与设备一致）；题目内容取自 `main/qpq_text.c` 的第 1 题，结算数字按
+  `QPQ_SCORE_CORRECT` / `QPQ_SCORE_STREAK_BONUS` 的规则自洽（13 对 7 错、最高连对 5 ⇒ 115 分 ⇒ 65% ⇒ 番客三级）。
+- **不是固件资产**：只用于文档，不烧进镜像、不占 Flash。
+- **重新生成**：`python3 screens-source.py` 重出 HTML；再把每个 240 × 320 设备框单独渲染，
+  按 4.8 倍设备缩放截图（`--window-size=240,320 --force-device-scale-factor=4.8`），
+  正好得到 1152 × 1536 的竖版 3:4 图。字体用系统里的 Noto Sans CJK / 微软雅黑代
+  Noto Sans CJK SC，字形与设备略有差异。
+
 - 使用描述性命名，并记录尺寸、像素格式、转换步骤与目标路径。
 - 优先采用适合 240 × 320 RGB565 显示的格式，并纳入 Flash 与内部 RAM 考量。
 - 许可允许时保留可编辑源文件，并记录来源与许可。
