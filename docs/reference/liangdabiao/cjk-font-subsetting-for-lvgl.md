@@ -2,230 +2,95 @@
   <a href="cjk-font-subsetting-for-lvgl.zh_CN.md">简体中文</a> · <strong>English</strong>
 </p>
 
-# Cutting a CJK Font Subset for LVGL
+# Subsetting a CJK font for LVGL
 
-Written while building the [Qiaopi Quiz app](qiaopi-quiz/README.md),
-a fully offline Chinese reading device. These notes apply to any AI Passport
-application whose UI shows Chinese text: the numbers below are measured on an
-ESP32-C3 with 8 MB Flash and no PSRAM.
+Recorded while building the [Qiaopi Quiz app](qiaopi-quiz/README.md), an offline
+fill-in-the-blank game for the FoloToy AI Passport. Everything below applies to any
+application on this board that has to render Chinese; every number was measured on
+an ESP32-C3 with 8 MB of flash and no PSRAM.
 
-## Why a subset is unavoidable
+## Derive the inventory from the sources, never maintain it by hand
 
-LVGL ships Montserrat, which is Latin-only, and an optional Source Han subset
-that is off by default. Setting a Chinese string on a widget whose font has no
-CJK glyphs does not raise an error — the label simply renders blank or draws
-tofu boxes. LVGL has no fallback chain, so **every widget that shows Chinese must
-be given a font that contains those characters**.
+The app shows 91 questions with explanations and provenance lines, plus its own
+interface strings, and that already needs **1303 distinct code points**. Nobody is
+going to keep a list like that correct by hand, so `gen_font.py` derives it from
+three places:
 
-This application displays one curated chapter plus its own interface strings, and
-that already needs **1303 distinct code points**. The three subsets in this
-project cover all of them.
+1. every character of the question bank, through the same `content.py` module the
+   C table generator uses;
+2. every non-ASCII character inside a string literal of `main/*.c|*.h`, after
+   comments are stripped — Chinese comments therefore cost no flash;
+3. printable ASCII plus the punctuation the interface draws itself.
 
-## Derive the glyph inventory; never hand-list it
+The result is written to `assets/fonts/charset.txt` so a reviewer has something to
+diff and so that "why is this glyph in here" has an answer:
 
-A hand-maintained character list goes stale the first time somebody adds a menu
-label, and the failure is silent. Instead, generate the inventory by unioning
-three sources:
-
-1. **Every character of the chapter sources**, read through the same module that
-   feeds the table generator — `tools/qiaopi/content.py` — so the C tables and
-   the font can never disagree about what the text says. Read them as characters
-   on a copy with all whitespace removed; splitting on whitespace yields
-   sentences, not single ideographs, and the subset quietly ends up containing
-   nothing.
-2. **Every non-ASCII character inside a string literal** in the application
-   sources. Strip `//` and `/* */` comments *before* scanning, so Chinese
-   comments cost no Flash; keep string literals intact, including escapes. The
-   generated tables are skipped explicitly — they are already covered by the
-   chapter sources, so scanning them is duplicated work.
-3. **Printable ASCII** (`0x20`-`0x7E`) plus the Chinese punctuation the UI draws
-   on its own: `·，。！？、：；（）「」《》…—`. The CJK punctuation is already
-   picked up from the chapter text, but keeping it in the explicit list means a
-   chapter edit that drops a punctuation mark cannot silently shrink the font.
-
-That produced 1303 code points: 1079 ideographs and 224 characters from the other
-two groups. Writing them out to a checked-in `charset.txt` gives reviewers
-something to diff and gives the next person a way to see *why* a glyph is in
-there:
-
-```text
+```
 # total code points: 1303  (CJK 1079, other 224)
 
 # --- CJK ideographs ---
-<286 ideographs, sorted by code point, one run with no separators:
- U+4E00 U+4E03 U+4E07 U+4E09 ... >
+<1079 ideographs, in one unbroken run, no separators>
 
-# --- everything else ---
- !"#$%&'()*+,-./0123456789:;<=>?@ABC...·—…、。《》「」！（），：；？
+# --- everything else (ASCII, CJK punctuation, the fullwidth low line) ---
+ !"#$%&'()*+,-./0123456789:;<=>?@ABC...·—…、。《》「」！（），：；？＿
 ```
-
-Writing the ideograph group as one unbroken run is deliberate: it is the thing the
-converter consumes, and a separator inserted "for readability" would become a
-glyph in the subset. The second group is short enough to read as a line, and it
-is where reviewers actually look.
 
 The first character of the second group is the space, which is easy to lose: a
 trim step in the generator that strips whitespace would drop `U+0020` and the
-inventory would silently become 396 while still rendering correctly until the
-day a string needs a space.
+inventory would silently become 1302 while still rendering correctly until the day
+a string needs a space.
 
-## Verify coverage before converting
+The ideographs are kept as a single unbroken run on purpose: a separator between
+them would itself be picked up by the converter as a glyph to include.
 
-The single highest-value step: load the source font's character map and check
-every code point in the inventory against it, then fail the build if any are
-missing.
+The last character of the second group is a fullwidth low line, used to draw the
+blank the reader has to fill. It is in the inventory because it appears in a
+string literal of `qpq_content.c`, not because it was listed anywhere by hand.
 
-```python
-from fontTools.ttLib import TTFont
+## Verify every code point before converting
 
-font = TTFont(source_font, fontNumber=0, lazy=True)
-cmap: set[int] = set()
-for table in font["cmap"].tables:
-    cmap |= set(table.cmap.keys())
-missing = [c for c in chars if ord(c) not in cmap]
-```
+The master font here is Noto Sans CJK SC Regular, under the SIL Open Font License
+1.1. Before conversion, every code point is looked up in the font's `cmap` with
+`fontTools`, and a miss aborts the run with up to forty offending characters
+printed. On this project the check reported 1303/1303 present.
 
-This matters because the source text can change. A curated chapter that quotes a
-variant or archaic form introduces a rare ideograph, and a converter given a
-character the font lacks does not necessarily stop; it can emit a font that is
-missing that glyph, and you discover it as one blank square in the middle of a
-line, on the device. Checking first turns that into a build-time error with up to
-forty offending characters printed. On this project the check reported 1303/1303
-present in Noto Sans CJK SC — cheap insurance that costs one pass over a
-character map.
+This matters because the source text changes. A new question's explanation may
+quote a rare variant character, and handing a font a code point it does not have
+does **not** reliably stop the converter — it may happily emit a subset that is
+missing that glyph, and you find out on the device, in the middle of a line, as a
+blank box. Checking in advance converts that into a build error. It costs one pass
+over the character map, which is cheap insurance.
 
-## Convert with the character set as a literal string
+## Three sizes, uncompressed, and why the large format is required
 
-Pass the inventory through `--symbols` as one literal string rather than
-describing ranges. Ranges drag in thousands of unused ideographs; the whole point
-is to pay only for what is displayed.
+Sizes are 16 px (top bar, provenance, summary labels), 24 px (sentence, options,
+explanation, full passage) and 32 px (title page headline and result rank), all at
+4 bits per pixel and uncompressed, so they can be read straight out of the flash
+mapping without decompression.
 
-```bash
-lv_font_conv \
-  --font NotoSansCJKsc-Regular.otf \
-  --symbols "$(cat charset.txt without comments)" \
-  --size 24 --bpp 4 \
-  --format lvgl --no-compress \
-  --lv-include lvgl.h \
-  --lv-font-name qpq_font_24 \
-  -o assets/fonts/qpq_font_24.c
-```
+In LVGL's default text format the per-glyph bitmap offset is a 16-bit field, and
+the 32 px subset's bitmap data exceeds 64 KB. `CONFIG_LV_FONT_FMT_TXT_LARGE=y` in
+`sdkconfig.defaults` is therefore mandatory, not a tuning knob.
 
-Choices worth knowing:
+## The size of the generated `.c` file is not the flash cost
 
-- **4 bits per pixel.** At 1 bpp, 16 px Chinese characters turn to mush — the
-  strokes are simply not representable. 4 bpp is the point where small text
-  stays legible; 8 bpp would double Flash for no visible gain on this panel.
-- **`--no-compress`.** Uncompressed glyph data stays memory-mapped in Flash and
-  is read directly, which needs no `CONFIG_LV_USE_FONT_COMPRESSED` and no
-  decompression buffer. On a part with no PSRAM that is the better trade.
-- **Pin the converter version.** `lv_font_conv` 1.5.3 here; the generated data
-  changes shape between releases, so the version is written into the generator
-  rather than left to whatever is on `PATH`.
-- **Name each output after its size** (`qpq_font_16`, `qpq_font_24`,
-  `qpq_font_32`) so a widget's declaration says which size it is using. The
-  generator derives the name from the size loop, so the two cannot drift.
+This one cost an hour of unnecessary alarm. The three generated files are 1.07 MB,
+2.12 MB and 3.48 MB of source, which looks impossible next to a 7.94 MB partition.
+It is not: each byte is written as `0xXX,`, six characters per byte of data.
 
-## Turn on the large-font format
+Counting the actual data bytes in the three files gives roughly 147 KB, 324 KB and
+553 KB, or **about 0.98 MB for all three faces**. The source files can be
+arbitrarily large; what matters is what the compiler keeps.
 
-LVGL's default text-format font stores each glyph's bitmap offset in 16 bits, so
-anything beyond 64 KB of bitmap data overflows that field. The bitmaps are not
-compressed, so the size is arithmetic: 1303 glyphs at 4 bpp, each taking
-`size * size / 2` bytes.
+The practical rule: estimate flash from the data, not from the generated text. If
+you must guess before building, `glyphs × size × size ÷ 2` bytes per face (for
+4 bpp) is the right shape of estimate, and the real answer comes from the firmware
+size report.
 
-| Subset | Bytes per glyph | Bitmap payload | Over the 64 KB field? |
-| --- | --- | --- | --- |
-| 16 px | 128 | 50,816 | no |
-| 24 px | 288 | 114,336 | yes |
-| 32 px | 512 | 203,264 | yes |
+## Related
 
-Two of the three overflow, so this is mandatory:
-
-```text
-CONFIG_LV_FONT_FMT_TXT_LARGE=y
-```
-
-It swaps the offset field to 32 bits. Without it the font either fails to compile
-or renders garbage — and the symptom is confusing enough that it is worth
-checking this flag first whenever a large generated font misbehaves. Note that
-the flag is per font *format*, not per font, so the 16 px subset gets it too
-even though it would have fit.
-
-## Know what it actually costs
-
-Measured on the generated sources:
-
-| Size | Generated C source |
-| --- | --- |
-| 16 px | 293,734 bytes |
-| 24 px | 565,633 bytes |
-| 32 px | 920,969 bytes |
-| **Total** | **1,780,336 bytes (1.70 MB)** |
-
-Two lessons:
-
-- **The `.c` file size is not the Flash cost.** Hex literals take several bytes
-  of source per byte of bitmap — here the three files total 1.70 MB of source
-  for roughly 368 KB of bitmap payload, plus glyph descriptors and character
-  maps. Judging the budget from a directory listing is off by close to five
-  times, in the direction that makes you panic for no reason.
-- **Budget the `.rodata` section, not the bitmaps.** The bitmaps are only part of
-  what a generated font puts in Flash; the descriptors and maps ride along. The
-  number that matters is the section size in the build's size report.
-
-The bitmaps are `const`, so `.rodata` is read straight from Flash and the fonts
-cost **no RAM**. That is what makes an uncompressed, memory-mapped font the right
-trade on a part with no PSRAM.
-
-## Declaration and use
-
-```c
-LV_FONT_DECLARE(qpq_font_16);
-LV_FONT_DECLARE(qpq_font_24);
-LV_FONT_DECLARE(qpq_font_32);
-```
-
-Declare all three once in the UI header, then set a font on **every** text
-widget, including ones created empty and filled in later. Give the generated
-files a comment saying they are generated and how to regenerate them; they are
-large enough that nobody will read them, and small enough that editing them by
-hand is tempting.
-
-## Keep the source font out of the repository
-
-The source OTF is 16 MB, which does not belong in a firmware repository. The
-generator does not need it committed: it looks for the file at a configured path
-(`QPQ_SOURCE_FONT`, defaulting to a directory outside the repository) and, when
-it is absent, `--download` fetches it from a pinned URL and **verifies a
-SHA-256** before writing it, so a changed upstream file fails loudly instead of
-silently changing the rendered glyphs. Record the font's name, licence (SIL Open
-Font License 1.1), the pinned hash, and the converter version in `assets/README.md`
-next to the generated files.
-
-## Check list
-
-- Inventory is generated from the chapter sources, the UI string literals, and a
-  symbol list — not hand-written.
-- Comments are stripped before scanning literals, so commented-out Chinese is not
-  shipped.
-- The generated tables are excluded from the scan, so the inventory has exactly
-  one source of truth for text.
-- Every code point is verified against the source font's character map, and a
-  miss fails the build.
-- `CONFIG_LV_FONT_FMT_TXT_LARGE=y` is set whenever any subset exceeds 64 KB of
-  bitmap data — and the arithmetic that decides it is written down.
-- Budget comes from the map or size report, not from the generated file sizes.
-- The source font is fetched by pinned URL plus hash, or read from outside the
-  repository; it is never committed.
-
-## Related documents
-
-- [Qiaopi Quiz app](qiaopi-quiz/README.md) — the application
-  these subsets were cut for.
-- [Letting font metrics drive the layout](font-metrics-driven-layout.md) — the
-  other half: the sizes of these fonts decide how many characters fit on a line
-  and how tall a row has to be.
-- `docs/development/engineering/lvgl-chinese-fonts.md` — the repository's own
-  font guidance.
-- `tools/qiaopi/gen_font.py` and `assets/fonts/charset.txt` — the generator
-  and its checked-in inventory.
+- [Qiaopi Quiz app](qiaopi-quiz/README.md) — the subsets these serve.
+- [Turning a prose bank into generated C tables](question-bank-pipeline.md) — the
+  module that supplies the content half of the inventory.
+- [Letting font metrics decide the layout](font-metrics-driven-layout.md) — the
+  character-per-line budgets these sizes imply.

@@ -2,300 +2,134 @@
   <a href="question-bank-pipeline.zh_CN.md">简体中文</a> · <strong>English</strong>
 </p>
 
-# Curating Chapter Content into Generated C
+# Turning a prose bank into generated C tables
 
-Written for the [Qiaopi Quiz app](qiaopi-quiz/README.md), whose
-entire content is a curated set of chapters — one done, eighty-one planned. This
-entry is the pipeline that turns a chapter into firmware data: one source file per
-chapter, a parser that refuses anything malformed, a generator that projects the
-sources into C tables, and a `--check` mode that makes a stale table fail the
-build.
+Recorded while porting the [Qiaopi Quiz app](qiaopi-quiz/README.md), a
+fill-in-the-blank game whose 91 questions come from real overseas-remittance
+letters. The pipeline is small enough to describe in one page, and every rule in
+it exists because breaking it produced a specific failure.
 
-## The problem: a chapter has no fixed shape
+## The problem: the content is prose, the device wants a table
 
-A fixed-form recitation text gives you a free structural guarantee — every lesson
-is the same number of lines, so "lesson 60" is arithmetic. The Dao De Jing does
-not: chapters run from a couple of sentences to a dozen, commentary is as long as
-it needs to be, and the whole book is a plain text that anyone can retype.
+A question is not a record with a fixed shape. It carries a sentence with a blank
+in it, four candidates, an index saying which one is right, an explanation that
+cites a classical source, the sender and year of the letter it came from, and the
+complete original passage. The sentence can be 11 characters or 22; the
+explanation runs from 30 to 56.
 
-Two consequences shape everything below:
+So the data model is a **flat struct per question, and nothing clever**. There is
+no per-category table, no offsets, no joined strings. 91 questions of seven
+pointers each is under 3 KB of pointers and it is obvious to read.
 
-- **The data model is a flat set of tables plus a per-chapter index record**,
-  rather than a fixed record per chapter. The generated header carries separate
-  arrays for reading screens, commentary points, and reflection answers, and each
-  chapter record holds offsets and counts into them.
-- **Only one of the eighty-one chapters exists today.** So the pipeline's main
-  job is to make *adding a chapter* the only edit required — no C file touched,
-  no constant bumped, no test updated.
+## One file, one block per question, and a format that is boring on purpose
 
-## One file per chapter, and a format that is boring on purpose
+The source of truth is `tools/qiaopi/bank.txt`. One block per question, fixed key
+order, one value per line:
 
-Chapter sources live in `tools/qiaopi/chapters/`, one file per chapter, named
-after the chapter number zero-padded to three digits. The format is deliberately
-plain:
-
-```text
-# comments start with '#' and may appear anywhere
-chapter = 1
-volume = <one of the two volume names>
-title = <a short heading, ideally three or four characters>
-
-[passages]
-one reading screen per line, no punctuation added or removed
-
-[commentary]
-one point per line
-
-[reflection]
-question = one line
-option   = exactly three, in slot order
+```
+== q01
+category: <one of six themes>
+sentence: <one line from a letter, with ____ marking the gap>
+options: <four candidates, separated by " / ">
+answer: <0-based index of the correct candidate>
+explain: <the usage or allusion behind the answer>
+source: <sender and year>
+full: <the complete original passage>
 ```
 
-Four reasons this format is worth insisting on:
+The format is deliberately dull so that every failure is a loud one. A missing
+key, an unknown key, a repeated key, five candidates instead of four, an answer
+index out of range — all abort the generator rather than quietly shipping a
+question with a default value.
 
-- **The line is the unit the application counts in.** A reading screen is one
-  line, a commentary point is one screen, a reflection answer is one row. Making
-  the file's unit match the domain's unit removes a whole layer of parsing.
-- **It diffs cleanly.** A reviewer sees one changed line, not a reflowed
-  paragraph.
-- **It has no syntax to get wrong.** No quoting, no escaping, no separators that
-  can be confused with content. Section headers are the only delimiters, and there
-  are three of them.
-- **The absence of punctuation is content, not laziness.** The source text's
-  punctuation is part of the reading, and the line breaker's rule is written
-  against exactly those marks. Adding or dropping a comma to make a line "look
-  better" changes what is displayed and what the line breaker sees.
+**Why one file and not one file per question.** The previous app in this
+repository used one file per chapter, because chapters were hundreds of lines
+each. Here a question is eight short lines, so 91 files would be 91 diff noise
+sources and a directory listing nobody reads. One block per question in one file
+still gives a clean diff — a change shows as one line in one block — while
+keeping the whole bank reviewable in a single scroll.
 
-## The three options are positional, and the format enforces it
+## The extractor runs once; after that the file is the source
 
-The reflection layer ends with a question and three answers. The three answers
-carry no right or wrong — they record a stance: *this landed*, *still chewing on
-it*, *did not connect*. The queue of chapters to re-read is then derived from the
-recorded stance.
+`extract_bank.py` pulls the questions out of the web version's `index.html`. It is
+a **one-shot bootstrap tool**: it refuses to overwrite an existing `bank.txt`
+unless given `--force`, and its header says so. Otherwise there would be two
+sources of truth, and editing the bank would be silently undone the next time
+someone re-ran the extractor.
 
-That only works if slot 0 always means the same thing. So the format requires
-**exactly three** options, in slot order, and the generator emits them unchanged:
+The extractor audits before writing: candidate count, answer range, the correct
+candidate appearing in the full passage (which catches rows shifted by one), and
+exactly one blank marker per sentence. On the first run it reported 91 questions
+and zero violations; that is the only reason the file was written at all.
 
-```python
-if len(options) != OPTION_SLOTS:
-    raise ContentError(
-        f"{path.name}: [reflection] needs exactly {OPTION_SLOTS} options, got {len(options)}"
-    )
+## Two sentence forms, and both are capped
+
+This is the rule that is easy to get wrong, because the two forms are rendered on
+different pages and only one of them is the one you are looking at while coding:
+
+- the **ask page** can only show the blank, so it renders the sentence with the
+  blank replaced by a slot of the same character count as the source text;
+- the **reveal page** shows the sentence with the correct candidate filled in.
+
+They differ in length by up to two characters. Capping only the filled form —
+which is the natural thing to do, since the filled form is what you picture —
+means the ask page can overflow on a question the cap says is fine. Both are
+checked, both in the generator and again in the host test against the real bank.
+
+## Generator constraints are arithmetic, not taste
+
+The device is 240x320 with a 210 px content area, and a Chinese glyph's advance
+equals the font size, so "characters per line" is a division:
+
+| Field | Font | Per line | Lines | Cap | Longest shipped |
+| --- | --- | --- | --- | --- | --- |
+| sentence, slot form | 24 px | 8 | 3 | 22 | 22 |
+| sentence, filled form | 24 px | 8 | 3 | 21 | 19 |
+| option | 24 px | 8 | 1 | 6 | 4 |
+| explanation | 24 px | 8 | scrolls | 60 | 56 |
+| full original | 24 px | 8 | scrolls | 48 | 46 |
+| provenance | 16 px | 13 | 2 | 26 | 21 |
+| category | 16 px | 13 | 1 | 6 | 4 |
+
+Every one of those caps was raised at least once during the port, because the
+first attempt was a guess. The measured column is why they are now believable.
+
+## `--check` is what turns "remember to regenerate" into a rule
+
+```
+python3 tools/qiaopi/gen_content.py            # rewrite the tables
+python3 tools/qiaopi/gen_content.py --check    # fail if they are stale
 ```
 
-The alternative — a `key = value` form for each option — would have made the file
-easier to read and the ordering meaning implicit. When the ordering *is* the
-meaning, making it explicit in the grammar is the cheaper trade.
+`--check` is what `tools/validate.sh` and CI run. Without it, editing the bank and
+forgetting the generator produces a build that compiles fine and ships the old
+questions — the worst kind of failure, because everything looks healthy. The
+audio generator and the font generator have the same flag, for the same reason.
 
-## Every failure is loud, and names the line
+## One module owns the content facts
 
-The parser refuses to produce a chapter unless the source satisfies its shape
-rules, and it names what broke. The full set it catches:
+`content.py` is imported by both `gen_content.py` (the C tables) and `gen_font.py`
+(the glyph inventory). Neither re-implements "what characters are in the bank".
+If the two disagreed, the tables could reference a glyph the font subset does not
+have, and the failure would be a blank box on a device, in the middle of a
+sentence, days later.
 
-| Failure | Why it matters |
+## What the parser refuses
+
+| Condition | Why it must fail loudly |
 | --- | --- |
-| Unknown key, unknown section, duplicate key, missing key | A typo would otherwise be silently ignored, and the chapter would ship with a default value. |
-| File name does not match `chapter =` | Off-by-one file names are the easiest mistake to make and the hardest to notice; chapter 1 would display chapter 2's text and its own title. |
-| Numbering has a gap | "Which chapter is next" is computed from the ordering, so a gap silently shortens the book. |
-| Volume does not match the chapter number | The volume is displayed on every reading screen; a wrong one lies to the reader on every page of the chapter. |
-| Empty title | The catalog and the top bar would show a blank label. |
-| Over-long passage, point, question, or option | The panel would overflow at runtime. |
+| Unknown key, duplicate key, missing key | A typo would otherwise be ignored and the question would ship with a default. |
+| Candidate count not four | The ask page renders exactly four rows; a fifth has nowhere to go. |
+| Answer index out of range | The reveal page indexes the options with it directly. |
+| Correct candidate absent from the full passage | The near-certain signature of a parse that shifted by one record. |
+| Blank marker missing, or present twice | The layout assumes exactly one slot to draw. |
+| Over-long field | It would be clipped on screen rather than failing the build. |
+| Duplicate sentence | Two identical questions in a 20-question round look like a bug to the reader. |
 
-Reporting the location matters more than it looks. "48 characters expected"
-without a file and line means bisecting the chapter by hand — and with 91 questions
-planned, that is the failure mode you will hit most often.
+## Related
 
-## Enforce the screen-fit limits in the generator
-
-The single most valuable rule in the pipeline. The panel fits a fixed number of
-characters per line at each layer's font size, so the generator refuses anything
-longer than one screenful:
-
-```python
-#   layer      font  px/char  per line  lines  limit
-#   passage    32     32       6         4      24
-#   commentary 24     24       8         6      48
-#   question   16     16       13        2      26
-#   option     24     24       7         1      7
-PASSAGE_MAX_CHARS = 24
-POINT_MAX_CHARS = 48
-QUESTION_MAX_CHARS = 26
-OPTION_MAX_CHARS = 7
-
-for index, passage in enumerate(passages):
-    if len(passage) > PASSAGE_MAX_CHARS:
-        raise ContentError(
-            f"{path.name}: passage {index + 1} is {len(passage)} characters, "
-            f"over the {PASSAGE_MAX_CHARS}-character limit for one screen; "
-            "split it into another screen instead"
-        )
-```
-
-Two things make this better than a style guide. First, the error message tells
-the author the *fix* — split the passage — not just the violation. Second, the
-same numbers are declared on the rendering side, in `main/qpq_ui.h`, as divisions
-of the content width with `_Static_assert` guards, so a change to the layout
-breaks the build rather than letting content pass generation and then overflow.
-
-And the limits are for the layer's *purpose*, not just its size. The commentary
-limit of 48 characters is not "as much as fits" — it is the length at which a
-point stops being a bullet and becomes an essay. Writing the limit down is what
-keeps the commentary a bullet list after the tenth contributor.
-
-## Generate the C tables, and derive the constants from the data
-
-`tools/qiaopi/gen_content.py` reads those files and writes `main/qpq_text.h`
-and `main/qpq_text.c`. The point worth copying is that the header's constants are
-**computed from the data**, not written by hand:
-
-```c
-#define QPQ_TOTAL_CHAPTERS 81
-#define QPQ_DAO_LAST_CHAPTER 37
-
-#define QPQ_CHAPTER_COUNT 1
-#define QPQ_PASSAGE_COUNT 6
-#define QPQ_POINT_COUNT 5
-#define QPQ_OPTION_COUNT 3
-#define QPQ_PONDER_OPTION_COUNT 3
-```
-
-`QPQ_TOTAL_CHAPTERS` is the one constant that is *not* derived, and that is
-deliberate: the book has 91 questions whether or not they are curated yet, and
-progress is stored for all 81 from the first day, so the save format does not
-change as chapters are added. Everything else — how many chapters exist, how many
-reading screens, how many options — is summed from the sources. A hand-maintained
-count goes wrong the first time somebody adds a chapter, and the failure mode is a
-chapter that is silently short.
-
-## Generated files must say they are generated
-
-Both outputs open with a banner:
-
-```c
-// Generated by tools/qiaopi/gen_content.py from tools/qiaopi/chapters/*.txt.
-// Do not edit by hand; edit the chapter source and run the generator.
-```
-
-`main/qpq_text.c` is a small file of string literals that nobody will read.
-Without the banner it is a prime candidate for a "quick fix" that the next
-regeneration silently deletes.
-
-## A `--check` mode so CI can catch a stale file
-
-The generator supports `--check`, which reports whether the committed tables still
-match the sources, without writing anything:
-
-```bash
-python3 tools/qiaopi/gen_content.py --check
-```
-
-This is what turns "remember to regenerate" into a rule.
-`tools/validate.sh --static` runs it first, before any test. Without it, editing
-the chapter file and forgetting the generator produces a build that compiles fine
-and ships the old text — the worst kind of failure, because everything looks
-healthy.
-
-The font generator has the same flag for the same reason, and it is wired into the
-same gate — but only when the tooling it needs is present:
-
-```bash
-if python3 -c "import fontTools" >/dev/null 2>&1; then
-    PYTHONDONTWRITEBYTECODE=1 python3 tools/qiaopi/gen_font.py --check
-else
-    echo "skip: gen_font.py --check (no fontTools; inventory sync not verified)" >&2
-fi
-```
-
-Verifying the glyph inventory needs a character map, which needs `fontTools` and
-the 16 MB source font. Neither belongs in a CI image. So the step *skips
-loudly* — it prints that the check did not run — rather than being silently absent
-from the gate or, worse, being written so that a missing dependency looks like a
-pass. A gate step that cannot fail is not a check; a gate step that lies about
-having run is worse than one that is missing.
-
-## Chain the generators through one module
-
-The two generators are linked by design, and not by convention: both import
-`tools/qiaopi/content.py`, which is the only thing that reads the chapter
-files.
-
-```text
-tools/qiaopi/chapters/*.txt
-   └─ content.py         (parses; the single source of truth)
-        ├─ gen_content.py  ->  main/qpq_text.{c,h}       (the tables)
-        └─ gen_font.py     ->  assets/fonts/qpq_font_*.c (the glyphs)
-```
-
-Adding one character to a chapter can therefore require regenerating the font
-subsets too. That is a feature, not a cost: the glyph inventory is the union of
-the chapter text and the UI strings, so a new character is picked up
-automatically instead of rendering as a blank box on one screen. Had the font
-generator re-implemented the parser and read the chapter files directly, the two
-could disagree about what the text says — and the symptom would be a missing glyph
-in the one chapter nobody proof-read.
-
-Run both, then run the gate.
-
-## Keep the invariants tested where they can fail fast
-
-The generator validates the text at generation time. The host tests re-check the
-*generated data* so a stale commit is caught even if nobody runs the generator:
-
-```c
-for (int index = 0; index < QPQ_CHAPTER_COUNT; index++) {
-    const qpq_chapter_t *chapter = qpq_chapter_at(index);
-    assert(chapter->number == index + 1);
-    assert(chapter->option_first == (uint16_t)(index * QPQ_PONDER_OPTION_COUNT));
-}
-assert(passage_sum == QPQ_PASSAGE_COUNT);
-assert(QPQ_OPTION_COUNT == QPQ_CHAPTER_COUNT * QPQ_PONDER_OPTION_COUNT);
-```
-
-The `option_first` assertion is the one to keep. Each chapter's three answers live
-in one shared table, so a chapter record holds only an offset into it. If a chapter
-were generated with an offset that is not a multiple of three, that chapter's three
-answers would silently be three *other* chapters' answers. A structural rule about
-the generator's output is exactly the kind of thing that is invisible in review and
-trivial as a host test.
-
-## Workflow after any content change
-
-```bash
-# 1. Edit tools/qiaopi/chapters/NNN.txt
-python3 tools/qiaopi/gen_content.py          # regenerate the C tables
-python3 tools/qiaopi/gen_font.py             # regenerate the glyph subsets
-python3 tools/qiaopi/gen_content.py --check  # confirm nothing is stale
-python3 tools/qiaopi/gen_font.py --check
-./tools/validate.sh --static                    # data invariants, host tests
-```
-
-## Check list
-
-- One curated file per chapter is the single source of truth for the text, and it
-  is never edited in C.
-- The file format's unit matches the domain's unit, with no syntax to escape.
-- Positional data (the three answers) is enforced by the grammar, not by comment.
-- Every malformed input is rejected with the file name and line number.
-- Screen-fit limits are enforced at generation time, and the message names the fix.
-- The same limits are declared on the rendering side and guarded with
-  `_Static_assert`.
-- The generator derives every count from the data instead of hard-coding it.
-- Generated files carry a "do not edit by hand" banner naming the generator.
-- A `--check` mode exists so CI can catch a stale output.
-- Both generators read the content through one shared module, so the tables and
-  the glyph inventory cannot disagree.
-- Data invariants are asserted in host tests, not only in the generator.
-
-## Related documents
-
-- [Qiaopi Quiz app](qiaopi-quiz/README.md) — the application this
-  content drives.
-- [Cutting a CJK font subset for LVGL](cjk-font-subsetting-for-lvgl.md) — the
-  second consumer of the same chapter sources.
-- [Keeping application logic on the host](host-testable-app-logic.md) — where the
-  data invariants are asserted.
-- [Letting font metrics drive the layout](font-metrics-driven-layout.md) — where
-  the screen-fit limits come from.
-- `tools/qiaopi/content.py`, `tools/qiaopi/gen_content.py`,
-  `tools/qiaopi/gen_font.py`, and `tools/qiaopi/chapters/` — the pipeline
-  itself.
+- [Qiaopi Quiz app](qiaopi-quiz/README.md) — the application this pipeline feeds.
+- [Subsetting a CJK font for LVGL](cjk-font-subsetting-for-lvgl.md) — the other
+  consumer of the same content module.
+- [Keeping application logic on the host](host-testable-app-logic.md) — how the
+  generated tables are asserted against the real budgets.
