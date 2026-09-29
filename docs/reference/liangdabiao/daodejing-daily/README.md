@@ -89,12 +89,20 @@ the same width, but every full-width CJK glyph in the source font has an advance
 exactly equal to the font size, which was verified per code point before
 generating the subsets. So "how many characters fit on one line" is a division:
 
-| Layer | Font | Characters per line | Lines budgeted | Character cap |
+| Layer | Font | Characters per line | Lines the area allows | Character cap |
 | --- | --- | --- | --- | --- |
 | Passage | 32 px | 6 | 5 | 24 |
 | Commentary | 24 px | 8 | 7 | 48 |
 | Reflection question | 16 px | 13 | 3 | 26 |
 | Reflection answers | 24 px | 7 | 1 | 7 |
+
+The cap is the binding constraint in every layer, and the two constraints are
+coupled through the line-breaking rule. A full-length 24-character passage is
+exactly four lines at six per line, with no slack; each early break the
+punctuation rule forces consumes one character of capacity, so one early break
+gives five lines (190 px, inside the 224 px reading area) and two would give six
+(228 px, outside it). The fifth line is the headroom for that one break, and a
+passage that would need two fails the host test rather than overflowing the panel.
 
 Both sides of that table are enforced: the generator refuses a chapter whose
 text exceeds the cap, and `tests/test_ddj_wrap.c` links the real content and
@@ -121,11 +129,12 @@ still keeps closing punctuation off the start of a line.
 
 ## Verification
 
-- `tools/validate.sh --static` — repository contract, generated-table freshness,
-  and four host tests over the platform-independent logic (content access, line
-  breaking, progress model, four-layer session state machine).
-- `tools/validate.sh --firmware` — cold build plus merged image, verified
-  section by section against the expected flash offsets.
+- `tools/validate.sh --static` — the repository contract, generated-table
+  freshness, the glyph-inventory check, and four host tests over the
+  platform-independent logic (content access, line breaking, progress model,
+  four-layer session state machine).
+- `tools/validate.sh --firmware` — cold build plus merged image, verified section
+  by section against the expected flash offsets.
 
 **Not verified on hardware.** The panel and its corner mask, the three-key ADC
 ladder thresholds, the synthesised sound effects, the battery gauge, NVS
