@@ -153,6 +153,32 @@ def build_inventory() -> list[str]:
     return sorted(chars)
 
 
+UNICODE_LIST_RE = re.compile(r"static const uint16_t unicode_list_1\[\] = \{(.*?)\};", re.S)
+SPARSE_CMAP_RE = re.compile(r"\{[^{}]*\.unicode_list = unicode_list_1[^{}]*\}")
+
+ASCII_FIRST, ASCII_LAST = 0x20, 0x7E
+
+
+def font_codepoints(path: Path) -> set[int]:
+    """从生成好的 lv_font_conv 输出反推「设备真能渲染的码点」。
+
+    稀疏段 ``unicode_list`` 里存的是相对该段 ``range_start`` 的偏移，所以必须先
+    找到挂着 ``unicode_list_1`` 的那条 cmap **自己的** ``range_start`` —— 文件里
+    还有一条 ASCII 的 cmap，取错它会把所有偏移算到错误的码点上。
+    """
+    text = path.read_text(encoding="utf-8")
+    block = SPARSE_CMAP_RE.search(text)
+    if block is None:
+        raise ValueError(f"{path.name} 里找不到 unicode_list_1 对应的 cmap")
+    start = int(re.search(r"\.range_start = (\d+)", block.group(0)).group(1))
+    offsets = UNICODE_LIST_RE.search(text)
+    if offsets is None:
+        raise ValueError(f"{path.name} 里找不到 unicode_list_1")
+    numbers = [int(token.strip(), 0)
+               for token in offsets.group(1).replace("\n", " ").split(",") if token.strip()]
+    return set(range(ASCII_FIRST, ASCII_LAST + 1)) | {start + n for n in numbers}
+
+
 def load_cmap(path: Path) -> set[int]:
     from fontTools.ttLib import TTFont
 
@@ -265,7 +291,8 @@ def main() -> int:
 
     FONT_DIR.mkdir(parents=True, exist_ok=True)
     content_text = describe(chars)
-    if CHARSET.is_file() and CHARSET.read_text(encoding="utf-8") == content_text:
+    up_to_date = CHARSET.is_file() and CHARSET.read_text(encoding="utf-8") == content_text
+    if up_to_date:
         print(f"unchanged: {CHARSET.relative_to(ROOT)}")
     elif args.check:
         print(f"STALE: {CHARSET.relative_to(ROOT)}", file=sys.stderr)
@@ -285,6 +312,26 @@ def main() -> int:
     print(f"覆盖：{len(chars)}/{len(chars)} 个码点都在 {source_font.name} 里")
 
     if args.check:
+        # 清单/字库与当前源码脱节是**硬错误**，不是提示：设备上缺字形会直接显示成
+        # 方框，而这一条曾经只往 stderr 打印 STALE 就放行（社区审核就是这么退回的）。
+        problems: list[str] = []
+        if not up_to_date:
+            problems.append(f"{CHARSET.relative_to(ROOT)} 与当前源码/题库不一致（清单已过期）")
+        for size in SIZES:
+            generated = FONT_DIR / f"qpq_font_{size}.c"
+            if not generated.is_file():
+                problems.append(f"{generated.relative_to(ROOT)} 不存在")
+                continue
+            absent = sorted(c for c in chars if ord(c) not in font_codepoints(generated))
+            if absent:
+                problems.append(
+                    f"{generated.relative_to(ROOT)} 缺 {len(absent)} 个码点的字形："
+                    + "".join(absent[:40]))
+        if problems:
+            for item in problems:
+                print(f"FAIL: {item}", file=sys.stderr)
+            print("重跑 tools/qiaopi/gen_font.py 生成字库后重试。", file=sys.stderr)
+            return 1
         return 0
 
     command = resolve_converter()
